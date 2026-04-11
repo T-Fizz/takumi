@@ -1,0 +1,228 @@
+# Takumi Runbook Benchmarks — LLM-Graded Evaluation
+#
+# Has an LLM evaluate whether the documentation runbooks produce a successful,
+# well-structured workspace setup. Grades both the documentation accuracy and
+# the resulting workspace quality.
+#
+# Usage:
+#   cd tests/benchmark
+#   ANTHROPIC_API_KEY=sk-... TAKUMI_BIN=../../build/takumi \
+#     npx --yes promptfoo@latest eval -c promptfooconfig.llm.yaml --no-cache
+#
+# Or from repo root:
+#   make benchmark-llm
+
+description: "Takumi Runbook Benchmarks — LLM Quality Evaluation"
+
+defaultTest:
+  options:
+    provider: anthropic:messages:claude-haiku-4-5-20251001
+
+providers:
+  - id: exec:bash run-scenario.sh new-project
+    label: new-project
+    config:
+      timeoutMs: 300000
+
+  - id: exec:bash run-scenario.sh onboard-golang
+    label: onboard-golang
+    config:
+      timeoutMs: 300000
+
+  - id: exec:bash run-scenario.sh onboard-python
+    label: onboard-python
+    config:
+      timeoutMs: 300000
+
+prompts:
+  - "{{scenario}}"
+
+tests:
+  # ─── New Project: documentation accuracy ────────────────────────────────────
+
+  - description: "new-project: getting-started guide produces a working project"
+    vars:
+      scenario: new-project
+    providers: [new-project]
+    assert:
+      - type: llm-rubric
+        value: |
+          This output is from a benchmark that followed Takumi's "Getting Started"
+          guide step-by-step to create a new Go project from scratch. The guide
+          promises that:
+          - `takumi init --root <name>` creates a directory with .takumi/, takumi.yaml,
+            and takumi-pkg.yaml
+          - Editing takumi-pkg.yaml with real build commands (go build, go test) works
+          - `takumi validate` checks configs for errors
+          - `takumi build` runs the build commands
+          - `takumi status` shows a workspace dashboard
+          - Subsequent builds skip unchanged packages (caching)
+
+          Evaluate whether ALL documented promises were fulfilled. Look at each step
+          for PASS/FAIL markers. A single FAIL means the documentation was inaccurate
+          or incomplete for that step. Rate this as PASS only if all steps succeeded
+          and the summary says "ALL PASSED".
+
+  - description: "new-project: documentation completeness for a first-time user"
+    vars:
+      scenario: new-project
+    providers: [new-project]
+    assert:
+      - type: llm-rubric
+        value: |
+          This benchmark output shows a step-by-step walkthrough of creating a new
+          project with Takumi. Evaluate the COMPLETENESS of the guide from a
+          first-time user's perspective:
+
+          1. Were there any steps the user had to figure out on their own that
+             the docs didn't mention? (e.g., creating go.mod, adding build/ to
+             ignore, creating source files)
+          2. Was the order of operations logical?
+          3. Would a developer unfamiliar with Takumi be able to follow along
+             without getting stuck?
+
+          Note: the benchmark script had to create Go source files and a go.mod
+          before build commands would work. If the guide doesn't mention this
+          prerequisite, that's a documentation gap worth noting — but it's expected
+          since the guide can't know what language the user chose. This should NOT
+          cause a failure. Rate as PASS if the Takumi-specific steps all worked correctly.
+
+  # ─── Onboard Go: documentation accuracy for real projects ──────────────────
+
+  - description: "onboard-golang: guide works for a real Go monorepo"
+    vars:
+      scenario: onboard-golang
+    providers: [onboard-golang]
+    assert:
+      - type: llm-rubric
+        value: |
+          This output is from onboarding a REAL open-source Go monorepo
+          (flowerinthenight/golang-monorepo) using Takumi's onboarding guide.
+          The project has 3 components: internal/ (shared lib), cmd/samplecmd/
+          (CLI tool), and services/samplesvc/ (service). Both cmd and service
+          depend on internal.
+
+          The guide promises:
+          - `takumi init` works in an existing project directory
+          - Creating takumi-pkg.yaml in each component with dependencies works
+          - `takumi validate` catches config errors
+          - `takumi graph` shows the correct dependency order (internal at level 0,
+            cmd and service at level 1)
+          - `takumi build` compiles in dependency order, producing real binaries
+          - `takumi test` runs test commands
+          - Caching skips unchanged packages on rebuild
+
+          Rate PASS only if the real project built successfully with correct
+          dependency resolution. Look for: 3 packages discovered, level 0 has
+          internal, level 1 has samplecmd and samplesvc, binaries produced in build/.
+
+  - description: "onboard-golang: dependency graph is correct"
+    vars:
+      scenario: onboard-golang
+    providers: [onboard-golang]
+    assert:
+      - type: llm-rubric
+        value: |
+          Examine the dependency graph output in this benchmark. The project has:
+          - internal: no dependencies (leaf package)
+          - samplecmd: depends on internal
+          - samplesvc: depends on internal
+
+          The correct graph should show:
+          - Level 0: internal (built first, no deps)
+          - Level 1: samplecmd and samplesvc (built in parallel, after internal)
+
+          Verify that the graph output matches this expected structure. The build
+          should execute internal first, then both command packages concurrently.
+          Rate PASS if the dependency resolution is correct.
+
+  # ─── Onboard Python: language-agnostic verification ─────────────────────────
+
+  - description: "onboard-python: guide works for a real Python monorepo"
+    vars:
+      scenario: onboard-python
+    providers: [onboard-python]
+    assert:
+      - type: llm-rubric
+        value: |
+          This output is from onboarding a REAL Python monorepo (carderne/postmodern-mono)
+          using Takumi's onboarding guide. The project has: libs/greeter (shared lib),
+          apps/mycli (CLI app), and apps/server (web server that depends on greeter).
+
+          Takumi is advertised as "language-agnostic" — it runs shell commands and
+          manages dependencies without knowing the language. This test verifies that
+          the documentation works for Python just as well as for Go.
+
+          Evaluate:
+          1. Did `takumi init` work in the Python project directory?
+          2. Were package configs created successfully for Python components?
+          3. Did `takumi validate` accept Python build commands (py_compile)?
+          4. Did the dependency graph correctly show server depending on greeter?
+          5. Did `takumi build` execute Python commands in the right order?
+          6. Did caching work for Python packages?
+
+          Rate PASS if the language-agnostic claim holds — all steps should work
+          regardless of the project being Python instead of Go.
+
+  - description: "onboard-python: documentation doesn't assume Go"
+    vars:
+      scenario: onboard-python
+    providers: [onboard-python]
+    assert:
+      - type: llm-rubric
+        value: |
+          This benchmark applied Takumi's onboarding documentation to a Python project.
+          The documentation examples use Go commands (go build, go test), but the tool
+          claims to be language-agnostic.
+
+          Evaluate whether a Python developer could follow the onboarding guide without
+          confusion. Specifically:
+          1. Were there any steps that ONLY make sense for Go projects?
+          2. Did the Python-adapted commands (py_compile, ast.parse) work as drop-in
+             replacements for the Go examples?
+          3. Would the documentation benefit from multi-language examples?
+
+          This is an evaluation of documentation quality, not tool functionality.
+          Rate PASS if the Python adaptation worked smoothly — meaning the guide's
+          structure was general enough to follow for any language. Minor friction
+          (having to mentally translate Go examples) is acceptable; actual blockers
+          or misleading instructions are not.
+
+  # ─── Cross-scenario: consistency ────────────────────────────────────────────
+
+  - description: "all scenarios: consistent output format across languages"
+    vars:
+      scenario: onboard-golang
+    providers: [onboard-golang, onboard-python]
+    assert:
+      - type: llm-rubric
+        value: |
+          This output shows Takumi onboarding a project. Evaluate whether the
+          takumi CLI produces consistent, well-structured output regardless of
+          the project language. Check that:
+          1. `takumi validate` output has a clear pass/fail structure
+          2. `takumi graph` output clearly shows dependency levels
+          3. `takumi build` output shows each package being built with status
+          4. `takumi status` provides a complete dashboard
+
+          The output format should be professional and parseable — an AI agent
+          reading this output should be able to extract the workspace state.
+          Rate PASS if the CLI output is clean and informative.
+
+  - description: "all scenarios: summary shows no failures"
+    vars:
+      scenario: new-project
+    providers: [new-project, onboard-golang, onboard-python]
+    assert:
+      - type: llm-rubric
+        value: |
+          This is a benchmark scenario that followed Takumi's documentation
+          step-by-step. Look at the SUMMARY section at the end of the output.
+
+          Rate PASS if:
+          - The summary says "ALL PASSED"
+          - The passed count equals the total count
+          - There are zero failures
+
+          Rate FAIL if ANY step failed, even if most steps passed. Documentation
+          accuracy means EVERY step works as described.

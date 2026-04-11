@@ -1,0 +1,279 @@
+# Takumi AI Skills — Integration Tests
+#
+# Verifies that each `takumi ai` command produces well-formed, context-rich
+# prompt output when run against the fixture workspace.
+#
+# Usage:
+#   cd tests/integration
+#   npx promptfoo eval
+#
+# Requirements:
+#   - Node.js 18+
+#   - Takumi binary compiled: go build -o ../../takumi ./cmd/takumi
+#   - Or use: make integration-test (from repo root)
+
+description: "Takumi AI Skills Integration Tests"
+
+providers:
+  # --- Diagnose skill ---
+  - id: exec:bash run-skill.sh ai diagnose api
+    label: diagnose
+
+  # --- Review skill ---
+  - id: exec:bash run-skill.sh ai review
+    label: review
+
+  # --- Optimize skill ---
+  - id: exec:bash run-skill.sh ai optimize
+    label: optimize
+
+  # --- Onboard skill ---
+  - id: exec:bash run-skill.sh ai onboard
+    label: onboard
+
+  # --- Skill list ---
+  - id: exec:bash run-skill.sh ai skill list
+    label: skill-list
+
+  # --- Skill show (diagnose) ---
+  - id: exec:bash run-skill.sh ai skill show diagnose
+    label: skill-show-diagnose
+
+  # --- Status ---
+  - id: exec:bash run-skill.sh status
+    label: status
+
+  # --- Graph ---
+  - id: exec:bash run-skill.sh graph
+    label: graph
+
+  # --- Validate ---
+  - id: exec:bash run-skill.sh validate
+    label: validate
+
+  # --- Dry run ---
+  - id: exec:bash run-skill.sh build --dry-run
+    label: dry-run
+
+prompts:
+  # promptfoo requires a prompt but exec providers ignore it
+  - "{{skill_name}}"
+
+tests:
+  # ─── diagnose ───────────────────────────────────────────────────────
+  - description: "diagnose renders package name and error context"
+    vars:
+      skill_name: diagnose
+    providers: [diagnose]
+    assert:
+      - type: contains
+        value: "api"
+      - type: contains
+        value: "handler.go"
+      - type: contains
+        value: "Diagnostic"
+
+  - description: "diagnose includes build log content"
+    vars:
+      skill_name: diagnose
+    providers: [diagnose]
+    assert:
+      - type: contains
+        value: "cannot use resp"
+      - type: contains
+        value: "ValidateRequest"
+      - type: contains
+        value: "exit code"
+
+  - description: "diagnose includes dependency chain"
+    vars:
+      skill_name: diagnose
+    providers: [diagnose]
+    assert:
+      - type: contains
+        value: "shared-lib"
+      - type: contains
+        value: "Root cause"
+
+  # ─── review ─────────────────────────────────────────────────────────
+  - description: "review renders affected packages section"
+    vars:
+      skill_name: review
+    providers: [review]
+    assert:
+      - type: contains
+        value: "Review"
+      - type: contains
+        value: "Summarize"
+
+  - description: "review contains diff or diff-unavailable message"
+    vars:
+      skill_name: review
+    providers: [review]
+    assert:
+      - type: regex
+        value: "(git diff|Diff:|diff unavailable)"
+
+  # ─── optimize ───────────────────────────────────────────────────────
+  - description: "optimize includes build metrics"
+    vars:
+      skill_name: optimize
+    providers: [optimize]
+    assert:
+      - type: contains
+        value: "Optimization"
+      - type: contains
+        value: "Build times"
+      - type: regex
+        value: "(duration_ms|build_metrics)"
+
+  - description: "optimize includes dependency graph"
+    vars:
+      skill_name: optimize
+    providers: [optimize]
+    assert:
+      - type: contains
+        value: "Level 0"
+      - type: regex
+        value: "(shared-lib|api)"
+
+  # ─── onboard ────────────────────────────────────────────────────────
+  - description: "onboard includes workspace config"
+    vars:
+      skill_name: onboard
+    providers: [onboard]
+    assert:
+      - type: contains
+        value: "sample-platform"
+      - type: contains
+        value: "Onboarding"
+      - type: contains
+        value: "workspace"
+
+  - description: "onboard includes all packages"
+    vars:
+      skill_name: onboard
+    providers: [onboard]
+    assert:
+      - type: contains
+        value: "shared-lib"
+      - type: contains
+        value: "api"
+
+  - description: "onboard includes graph levels"
+    vars:
+      skill_name: onboard
+    providers: [onboard]
+    assert:
+      - type: contains
+        value: "Level 0"
+
+  # ─── skill list ─────────────────────────────────────────────────────
+  - description: "skill list shows all 6 built-in skills"
+    vars:
+      skill_name: skill-list
+    providers: [skill-list]
+    assert:
+      - type: contains
+        value: "operator"
+      - type: contains
+        value: "diagnose"
+      - type: contains
+        value: "review"
+      - type: contains
+        value: "optimize"
+      - type: contains
+        value: "onboard"
+      - type: contains
+        value: "doc-writer"
+      - type: contains
+        value: "built-in"
+
+  # ─── skill show ─────────────────────────────────────────────────────
+  - description: "skill show diagnose displays template with placeholders"
+    vars:
+      skill_name: skill-show-diagnose
+    providers: [skill-show-diagnose]
+    assert:
+      - type: contains
+        value: "diagnose"
+      - type: regex
+        value: "\\{\\{package_name\\}\\}"
+      - type: regex
+        value: "\\{\\{error_output\\}\\}"
+      - type: contains
+        value: "Auto-context"
+
+  # ─── status ─────────────────────────────────────────────────────────
+  - description: "status shows workspace dashboard"
+    vars:
+      skill_name: status
+    providers: [status]
+    assert:
+      - type: contains
+        value: "sample-platform"
+      - type: contains
+        value: "api"
+      - type: contains
+        value: "shared-lib"
+
+  - description: "status shows AI agent"
+    vars:
+      skill_name: status
+    providers: [status]
+    assert:
+      - type: contains
+        value: "claude"
+
+  - description: "status shows build metrics"
+    vars:
+      skill_name: status
+    providers: [status]
+    assert:
+      - type: regex
+        value: "(pass|fail)"
+
+  # ─── graph ──────────────────────────────────────────────────────────
+  - description: "graph shows dependency levels"
+    vars:
+      skill_name: graph
+    providers: [graph]
+    assert:
+      - type: contains
+        value: "Level 0"
+      - type: contains
+        value: "shared-lib"
+      - type: contains
+        value: "api"
+      - type: regex
+        value: "2 packages"
+
+  # ─── validate ───────────────────────────────────────────────────────
+  - description: "validate checks all configs"
+    vars:
+      skill_name: validate
+    providers: [validate]
+    assert:
+      - type: contains
+        value: "Validating"
+      - type: contains
+        value: "valid"
+      - type: contains
+        value: "no cycles"
+
+  # ─── dry-run ────────────────────────────────────────────────────────
+  - description: "dry-run shows execution plan"
+    vars:
+      skill_name: dry-run
+    providers: [dry-run]
+    assert:
+      - type: contains
+        value: "Dry Run"
+      - type: contains
+        value: "shared-lib"
+      - type: contains
+        value: "api"
+      - type: regex
+        value: "(will run|cached)"
+      - type: regex
+        value: "\\d+ packages?"

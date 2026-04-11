@@ -1,0 +1,18 @@
+# Build artifacts
+build/
+coverage/
+
+# Takumi workspace state
+.takumi/envs/
+.takumi/logs/
+.takumi/cache/
+.takumi/metrics.json
+
+# AI agent context files
+CLAUDE.md
+.claude/
+.cursor/
+.cursorrules
+.github/copilot-instructions.md
+.windsurfrules
+.clinerules
