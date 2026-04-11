@@ -78,7 +78,7 @@ func runCheckout(cmd *cobra.Command, args []string) error {
 	}
 
 	// Scan for packages in cloned repo
-	pkgs, err := workspace.ScanPackages(cloneDir, nil)
+	pkgs, _, err := workspace.ScanPackages(cloneDir, nil)
 	if err != nil {
 		return fmt.Errorf("scanning cloned repo: %w", err)
 	}

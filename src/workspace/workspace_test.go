@@ -59,7 +59,7 @@ func TestScanPackages_FindsPackages(t *testing.T) {
 		"svc-b": "sub/svc-b",
 	})
 
-	pkgs, err := ScanPackages(root, nil)
+	pkgs, _, err := ScanPackages(root, nil)
 	require.NoError(t, err)
 	assert.Len(t, pkgs, 2)
 	assert.Contains(t, pkgs, "svc-a")
@@ -77,7 +77,7 @@ func TestScanPackages_RespectsIgnoreList(t *testing.T) {
 		"node":   "node_modules/pkg",
 	})
 
-	pkgs, err := ScanPackages(root, []string{"vendor/", "node_modules/"})
+	pkgs, _, err := ScanPackages(root, []string{"vendor/", "node_modules/"})
 	require.NoError(t, err)
 	assert.Len(t, pkgs, 1)
 	assert.Contains(t, pkgs, "keep")
@@ -89,7 +89,7 @@ func TestScanPackages_IgnoresDirectoryByName(t *testing.T) {
 		"hidden": "nested/vendor/hidden",
 	})
 
-	pkgs, err := ScanPackages(root, []string{"vendor"})
+	pkgs, _, err := ScanPackages(root, []string{"vendor"})
 	require.NoError(t, err)
 	assert.Len(t, pkgs, 1)
 	assert.Contains(t, pkgs, "good")
@@ -106,7 +106,7 @@ func TestScanPackages_SkipsTakumiDir(t *testing.T) {
 	require.NoError(t, os.Mkdir(svcDir, 0755))
 	writePkgYAML(t, svcDir, "real-svc")
 
-	pkgs, err := ScanPackages(root, nil)
+	pkgs, _, err := ScanPackages(root, nil)
 	require.NoError(t, err)
 	assert.Len(t, pkgs, 1)
 	assert.Contains(t, pkgs, "real-svc")
@@ -126,15 +126,47 @@ func TestScanPackages_SkipsUnparseableFiles(t *testing.T) {
 	err := os.WriteFile(filepath.Join(badDir, PackageFile), []byte("{{broken}}"), 0644)
 	require.NoError(t, err)
 
-	pkgs, scanErr := ScanPackages(root, nil)
+	pkgs, parseErrors, scanErr := ScanPackages(root, nil)
 	require.NoError(t, scanErr)
 	assert.Len(t, pkgs, 1)
 	assert.Contains(t, pkgs, "good")
+
+	// Parse errors should be collected, not silently dropped
+	require.Len(t, parseErrors, 1)
+	assert.Equal(t, filepath.Join(badDir, PackageFile), parseErrors[0].Path)
+	assert.Error(t, parseErrors[0].Err)
+}
+
+func TestScanPackages_CollectsColonSpaceYAMLParseError(t *testing.T) {
+	// Regression test: a YAML plain scalar containing ": " (colon-space) gets
+	// silently misparsed by the YAML decoder, causing struct unmarshalling to fail.
+	// ScanPackages must surface these as parse errors, not silently drop them.
+	root := t.TempDir()
+
+	// Valid package
+	goodDir := filepath.Join(root, "good")
+	require.NoError(t, os.Mkdir(goodDir, 0755))
+	writePkgYAML(t, goodDir, "good")
+
+	// Package with unquoted colon-space in a command value
+	badDir := filepath.Join(root, "bad-colon")
+	require.NoError(t, os.Mkdir(badDir, 0755))
+	badYAML := "package:\n  name: bad-colon\n  version: 0.1.0\nphases:\n  build:\n    commands:\n      - echo greeter: syntax OK\n"
+	require.NoError(t, os.WriteFile(filepath.Join(badDir, PackageFile), []byte(badYAML), 0644))
+
+	pkgs, parseErrors, err := ScanPackages(root, nil)
+	require.NoError(t, err)
+	assert.Len(t, pkgs, 1)
+	assert.Contains(t, pkgs, "good")
+
+	require.Len(t, parseErrors, 1)
+	assert.Equal(t, filepath.Join(badDir, PackageFile), parseErrors[0].Path)
+	assert.Error(t, parseErrors[0].Err)
 }
 
 func TestScanPackages_EmptyWorkspace(t *testing.T) {
 	root := t.TempDir()
-	pkgs, err := ScanPackages(root, nil)
+	pkgs, _, err := ScanPackages(root, nil)
 	require.NoError(t, err)
 	assert.Empty(t, pkgs)
 }
@@ -143,7 +175,7 @@ func TestScanPackages_RootPackage(t *testing.T) {
 	root := t.TempDir()
 	writePkgYAML(t, root, "root-pkg")
 
-	pkgs, err := ScanPackages(root, nil)
+	pkgs, _, err := ScanPackages(root, nil)
 	require.NoError(t, err)
 	assert.Len(t, pkgs, 1)
 	assert.Contains(t, pkgs, "root-pkg")
@@ -156,7 +188,7 @@ func TestScanPackages_SkipsNonPackageFiles(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(root, "other.yaml"), []byte("key: val"), 0644))
 	writePkgYAML(t, root, "real")
 
-	pkgs, err := ScanPackages(root, nil)
+	pkgs, _, err := ScanPackages(root, nil)
 	require.NoError(t, err)
 	assert.Len(t, pkgs, 1)
 	assert.Contains(t, pkgs, "real")
@@ -179,7 +211,7 @@ func TestScanPackages_SkipsInaccessibleDir(t *testing.T) {
 	require.NoError(t, os.Mkdir(badDir, 0000))
 	t.Cleanup(func() { os.Chmod(badDir, 0755) })
 
-	pkgs, err := ScanPackages(root, nil)
+	pkgs, _, err := ScanPackages(root, nil)
 	require.NoError(t, err)
 	assert.Len(t, pkgs, 1)
 	assert.Contains(t, pkgs, "good")
@@ -189,7 +221,7 @@ func TestScanPackages_PackageConfigFields(t *testing.T) {
 	root := t.TempDir()
 	writePkgYAML(t, root, "my-pkg")
 
-	pkgs, err := ScanPackages(root, nil)
+	pkgs, _, err := ScanPackages(root, nil)
 	require.NoError(t, err)
 
 	pkg := pkgs["my-pkg"]

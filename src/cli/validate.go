@@ -41,7 +41,18 @@ func runValidate(cmd *cobra.Command, args []string) error {
 	wsFindings := config.ValidateWorkspace(ws.Config)
 	errors, warnings = printFindings("takumi.yaml", wsFindings, errors, warnings)
 
-	// 2. Package configs
+	// 2. Unparseable package configs
+	for _, pe := range ws.ParseErrors {
+		relPath, _ := filepath.Rel(ws.Root, pe.Path)
+		if relPath == "" {
+			relPath = pe.Path
+		}
+		fmt.Printf("  %s %s\n", ui.Cross(""), ui.FilePath(relPath))
+		fmt.Printf("    %s %s\n", ui.Bullet(""), pe.Err)
+		errors++
+	}
+
+	// 3. Package configs
 	var names []string
 	for name := range ws.Packages {
 		names = append(names, name)
@@ -58,7 +69,7 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		errors, warnings = printFindings(relPath, findings, errors, warnings)
 	}
 
-	// 3. Version-set config (if configured)
+	// 4. Version-set config (if configured)
 	if vsFile := ws.Config.Workspace.VersionSet.File; vsFile != "" {
 		vsPath := filepath.Join(ws.Root, vsFile)
 		if _, err := os.Stat(vsPath); os.IsNotExist(err) {
@@ -78,7 +89,7 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// 4. Cross-validation: dependency resolution
+	// 5. Cross-validation: dependency resolution
 	for _, name := range names {
 		pkg := ws.Packages[name]
 		for _, dep := range pkg.Config.Dependencies {
@@ -90,7 +101,7 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// 5. Cross-validation: cycle detection
+	// 6. Cross-validation: cycle detection
 	g := buildGraph(ws)
 	if _, err := g.Sort(); err != nil {
 		fmt.Printf("  %s Dependency cycle detected: %s\n", ui.Cross(""), err)

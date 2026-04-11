@@ -19,9 +19,16 @@ const (
 
 // Info holds the resolved workspace state.
 type Info struct {
-	Root     string                    // Absolute path to workspace root (parent of .takumi/)
-	Config   *config.WorkspaceConfig   // Parsed takumi.yaml
-	Packages map[string]*DiscoveredPkg // name → discovered package
+	Root        string                    // Absolute path to workspace root (parent of .takumi/)
+	Config      *config.WorkspaceConfig   // Parsed takumi.yaml
+	Packages    map[string]*DiscoveredPkg // name → discovered package
+	ParseErrors []ScanError               // takumi-pkg.yaml files that failed to parse
+}
+
+// ScanError records a takumi-pkg.yaml file that was found but could not be parsed.
+type ScanError struct {
+	Path string // Absolute path to the file
+	Err  error  // The parse error
 }
 
 // DiscoveredPkg is a package found during recursive scanning.
@@ -56,8 +63,9 @@ func Detect(startDir string) string {
 
 // ScanPackages recursively finds all takumi-pkg.yaml files under root,
 // respecting the ignore list from the workspace config.
-func ScanPackages(root string, ignore []string) (map[string]*DiscoveredPkg, error) {
+func ScanPackages(root string, ignore []string) (map[string]*DiscoveredPkg, []ScanError, error) {
 	pkgs := make(map[string]*DiscoveredPkg)
+	var parseErrors []ScanError
 
 	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -83,7 +91,8 @@ func ScanPackages(root string, ignore []string) (map[string]*DiscoveredPkg, erro
 
 		cfg, err := config.LoadPackageConfig(path)
 		if err != nil {
-			return nil // skip unparseable package files
+			parseErrors = append(parseErrors, ScanError{Path: path, Err: err})
+			return nil
 		}
 
 		pkgs[cfg.Package.Name] = &DiscoveredPkg{
@@ -94,7 +103,7 @@ func ScanPackages(root string, ignore []string) (map[string]*DiscoveredPkg, erro
 		return nil
 	})
 
-	return pkgs, err
+	return pkgs, parseErrors, err
 }
 
 // shouldIgnore checks if a directory path matches any entry in the ignore list.
@@ -134,14 +143,15 @@ func Load(startDir string) (*Info, error) {
 		return nil, err
 	}
 
-	pkgs, err := ScanPackages(root, cfg.Workspace.Ignore)
+	pkgs, parseErrors, err := ScanPackages(root, cfg.Workspace.Ignore)
 	if err != nil {
 		return nil, err
 	}
 
 	return &Info{
-		Root:     root,
-		Config:   cfg,
-		Packages: pkgs,
+		Root:        root,
+		Config:      cfg,
+		Packages:    pkgs,
+		ParseErrors: parseErrors,
 	}, nil
 }

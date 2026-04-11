@@ -303,7 +303,7 @@ func TestRunInit_PackageDiscoverableAfterInit(t *testing.T) {
 	require.NoError(t, runInit(initCmd, []string{"svc-b"}))
 
 	// Scan should find all three
-	pkgs, err := workspace.ScanPackages(dir, nil)
+	pkgs, _, err := workspace.ScanPackages(dir, nil)
 	require.NoError(t, err)
 	assert.Len(t, pkgs, 3)
 	assert.Contains(t, pkgs, filepath.Base(dir))

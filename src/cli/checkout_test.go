@@ -130,7 +130,7 @@ func TestRunCheckout_DetectsPackages(t *testing.T) {
 	assert.Equal(t, -1, *exitCode)
 
 	// Verify the package was detected
-	pkgs, err := workspace.ScanPackages(filepath.Join(wsDir, "test-repo"), nil)
+	pkgs, _, err := workspace.ScanPackages(filepath.Join(wsDir, "test-repo"), nil)
 	require.NoError(t, err)
 	assert.Contains(t, pkgs, "my-service")
 }
