@@ -321,12 +321,28 @@ func TestHandleDiagnose_MissingParam(t *testing.T) {
 	assert.True(t, result.IsError)
 }
 
-func TestHandleDiagnose_PrefersTestOverBuild(t *testing.T) {
+func TestHandleDiagnose_PrefersFailingLog(t *testing.T) {
 	dir := setupWorkspace(t)
 
-	// Create both log files
-	os.WriteFile(filepath.Join(dir, ".takumi", "logs", "my-pkg.build.log"), []byte("# exit code: 0\n"), 0644)
-	os.WriteFile(filepath.Join(dir, ".takumi", "logs", "my-pkg.test.log"), []byte("# exit code: 2\n"), 0644)
+	// Build failed, test passed — diagnose should pick the failing build log
+	os.WriteFile(filepath.Join(dir, ".takumi", "logs", "my-pkg.build.log"), []byte("build error output\n# exit code: 1\n"), 0644)
+	os.WriteFile(filepath.Join(dir, ".takumi", "logs", "my-pkg.test.log"), []byte("tests passed\n# exit code: 0\n"), 0644)
+
+	result, err := handleDiagnose(context.Background(), makeRequest(map[string]any{
+		"package": "my-pkg",
+	}))
+	require.NoError(t, err)
+	text := result.Content[0].(gomcp.TextContent).Text
+	assert.Contains(t, text, "Phase: build")
+	assert.Contains(t, text, "Exit code: 1")
+}
+
+func TestHandleDiagnose_PrefersFailingTest(t *testing.T) {
+	dir := setupWorkspace(t)
+
+	// Build passed, test failed — diagnose should pick the failing test log
+	os.WriteFile(filepath.Join(dir, ".takumi", "logs", "my-pkg.build.log"), []byte("build ok\n# exit code: 0\n"), 0644)
+	os.WriteFile(filepath.Join(dir, ".takumi", "logs", "my-pkg.test.log"), []byte("FAIL\n# exit code: 2\n"), 0644)
 
 	result, err := handleDiagnose(context.Background(), makeRequest(map[string]any{
 		"package": "my-pkg",
@@ -334,6 +350,42 @@ func TestHandleDiagnose_PrefersTestOverBuild(t *testing.T) {
 	require.NoError(t, err)
 	text := result.Content[0].(gomcp.TextContent).Text
 	assert.Contains(t, text, "Phase: test")
+	assert.Contains(t, text, "Exit code: 2")
+}
+
+func TestHandleDiagnose_BothPassingFallsBackToNewest(t *testing.T) {
+	dir := setupWorkspace(t)
+
+	// Both passed — should fall back to the newest log
+	os.WriteFile(filepath.Join(dir, ".takumi", "logs", "my-pkg.build.log"), []byte("build ok\n# exit code: 0\n"), 0644)
+	// Touch test log to be newer
+	os.WriteFile(filepath.Join(dir, ".takumi", "logs", "my-pkg.test.log"), []byte("tests ok\n# exit code: 0\n"), 0644)
+
+	result, err := handleDiagnose(context.Background(), makeRequest(map[string]any{
+		"package": "my-pkg",
+	}))
+	require.NoError(t, err)
+	text := result.Content[0].(gomcp.TextContent).Text
+	// Should return something — doesn't matter which phase, just shouldn't fail
+	assert.Contains(t, text, "Phase:")
+	assert.Contains(t, text, "Exit code: 0")
+}
+
+func TestHandleDiagnose_ExplicitPhase(t *testing.T) {
+	dir := setupWorkspace(t)
+
+	// Both exist, test is failing — but agent explicitly asks for build
+	os.WriteFile(filepath.Join(dir, ".takumi", "logs", "my-pkg.build.log"), []byte("build ok\n# exit code: 0\n"), 0644)
+	os.WriteFile(filepath.Join(dir, ".takumi", "logs", "my-pkg.test.log"), []byte("FAIL\n# exit code: 1\n"), 0644)
+
+	result, err := handleDiagnose(context.Background(), makeRequest(map[string]any{
+		"package": "my-pkg",
+		"phase":   "build",
+	}))
+	require.NoError(t, err)
+	text := result.Content[0].(gomcp.TextContent).Text
+	assert.Contains(t, text, "Phase: build")
+	assert.Contains(t, text, "Exit code: 0")
 }
 
 // ---------------------------------------------------------------------------

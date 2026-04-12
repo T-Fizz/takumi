@@ -28,6 +28,7 @@ src/cli/                     Cobra command tree + TUI glue
   ├── versionset.go          `takumi version-set check` — pinned dep report
   ├── ai.go                  `takumi ai *` — skill context/diagnose/review/optimize/onboard
   ├── agent.go               AI agent selection (interactive + flag) + config
+  ├── mcp.go                 `takumi mcp serve` — start MCP server
   └── docs.go                `takumi docs generate/hook` — auto-doc generation
                               │
 src/config/                  YAML config parsing + validation
@@ -51,6 +52,10 @@ src/cache/                   Content-addressed build caching
 src/skills/                  AI skill template system
   ├── skills.go              LoadBuiltins(), LoadFromDir(), Render()
   └── builtin/*.yaml         6 embedded skill YAML files
+                              │
+src/mcp/                     MCP (Model Context Protocol) server
+  ├── server.go              NewServer() — creates and configures MCPServer
+  └── tools.go               7 tool definitions + handlers
                               │
 src/ui/                      Terminal styling (charmbracelet)
   ├── styles.go              Colors, text styles, helper renderers
@@ -297,6 +302,7 @@ type RunOptions struct {
     Packages []string  // nil = all
     Parallel bool
     NoCache  bool
+    Quiet    bool      // suppress terminal output (log files still written)
 }
 
 type MetricsEntry struct {
@@ -428,6 +434,50 @@ type LoadedSkill struct {
 | `optimize` | Analyze build performance from metrics |
 | `onboard` | Generate workspace briefing for new developers |
 | `doc-writer` | Generate enhanced documentation |
+
+---
+
+## Package: `mcp` — MCP Server
+
+Exposes Takumi workspace operations as Model Context Protocol tools over stdio, enabling AI agents to operate the workspace directly.
+
+### Functions
+
+| Function | Input | Output | Description |
+|----------|-------|--------|-------------|
+| `NewServer()` | — | `*server.MCPServer` | Creates MCP server ("takumi", "0.1.0"), registers all 7 tools, returns configured server. |
+
+### Tools (7 total)
+
+| Tool | Parameters | Description |
+|------|-----------|-------------|
+| `takumi_status` | — | Workspace health dashboard: packages, deps, phases, sources, recent builds, AI agent |
+| `takumi_build` | `packages?`, `affected?`, `no_cache?` | Build packages in dependency order. Supports affected-only and cache bypass. |
+| `takumi_test` | `packages?`, `affected?`, `no_cache?` | Run test phase. Same options as build. |
+| `takumi_diagnose` | `package` (required) | Read most recent build/test log for a package. Returns log contents for failure triage. |
+| `takumi_affected` | `since?` | List packages affected by file changes + transitive dependents. Default: working tree changes. |
+| `takumi_validate` | — | Validate all config files: structural checks, unresolved deps, cycle detection, version-set. |
+| `takumi_graph` | — | Return dependency graph with parallel level annotations. |
+
+### Design Decisions
+
+- **File-based output:** Build/test logs are written to `.takumi/logs/`. Tool results return a summary + file path, not inline log content. Reduces token consumption for AI agents.
+- **Serialized execution:** Server uses `WorkerPoolSize(1)` to serialize tool calls. Prevents concurrent builds from interfering.
+- **Quiet mode:** All tool handlers set `executor.RunOptions.Quiet = true`, routing terminal output to `io.Discard` so it doesn't corrupt the stdio JSON-RPC transport.
+- **Package alias:** Uses `gomcp "github.com/mark3labs/mcp-go/mcp"` to avoid collision with the `package mcp` declaration.
+
+### Internal Helpers
+
+| Function | Description |
+|----------|-------------|
+| `loadWorkspace()` | `os.Getwd()` → `workspace.Load(cwd)`, returns error if no workspace found |
+| `newGraph(ws)` | Builds `graph.Graph` from workspace packages |
+| `handlePhase(phase)` | Shared handler for build/test — parses packages, affected, no_cache params |
+| `gitChangedFiles(wsRoot, since)` | Duplicated from cli/affected.go to avoid import cycle |
+| `mapFilesToPackages(ws, files)` | Maps changed files to affected packages |
+| `sortedPackageNames(ws)` | Returns alphabetically sorted package names |
+| `sortedKeys(m)` | Returns sorted keys from a `map[string]string` |
+| `capitalize(s)` | Uppercases first character |
 
 ---
 
@@ -706,9 +756,10 @@ func main() {
 | `charmbracelet/lipgloss` | v1.1.0 | Terminal styling |
 | `charmbracelet/log` | v1.0.0 | Styled logging |
 | `charmbracelet/huh` | v1.0.0 | Interactive prompts (agent selection) |
+| `mark3labs/mcp-go` | v0.47.1 | MCP server SDK (stdio transport) |
 | `testify` | v1.11.1 | Test assertions (dev only) |
 
-All dependencies are MIT-licensed.
+All dependencies are MIT or compatible licensed.
 
 ---
 
@@ -716,21 +767,22 @@ All dependencies are MIT-licensed.
 
 | Package | Coverage | Notes |
 |---------|----------|-------|
-| `cache` | 89.4% | Unreachable: MkdirAll failure, io.Copy failure |
-| `cli` | 94.6% | ~130 tests in coverage_test.go |
-| `config` | 97.3% | |
-| `executor` | 91.0% | 23 tests |
+| `cache` | 95.5% | |
+| `cli` | 94.8% | ~130 tests in coverage_test.go |
+| `config` | 98.6% | |
+| `executor` | 95.4% | 23 tests |
 | `graph` | 100% | |
-| `skills` | 87.2% | Unreachable: embed.FS errors |
+| `mcp` | 96.7% | 57+ unit tests + 3 E2E simulation tests |
+| `skills` | 100% | |
 | `ui` | 100% | |
-| `workspace` | 94.1% | |
-| **Total** | **~94.7%** | Remaining gaps are OS-level unreachable error paths |
+| `workspace` | 96.2% | |
+| **Total** | **~97%** | Remaining gaps are OS-level unreachable error paths |
 
 ---
 
 ## File Count
 
-- **Source files:** 22 `.go` files (non-test)
-- **Test files:** 14 `_test.go` files
+- **Source files:** 32 `.go` files (non-test)
+- **Test files:** 21 `_test.go` files
 - **Skill YAMLs:** 6 embedded templates
-- **Total Go LoC:** ~2,800 (source) + ~2,200 (tests)
+- **Total Go LoC:** ~4,900 (source) + ~10,000 (tests)

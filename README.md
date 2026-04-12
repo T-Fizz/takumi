@@ -36,6 +36,7 @@ Unchanged packages are automatically skipped via content-addressed caching.
 - **Parallel execution** — independent packages run concurrently within each dependency level
 - **Content-addressed caching** — SHA-256 of source files + config + dependency keys; incremental builds
 - **Runtime isolation** — optional per-package environments (virtualenv, nvm, etc.) with `{{env_dir}}` substitution
+- **MCP server** — Model Context Protocol server for direct AI agent integration (`takumi mcp serve`)
 - **AI skills** — prompt templates for Claude, Cursor, Copilot, Windsurf, and Cline
 - **Source tracking** — clone and sync external git repositories into the workspace
 - **Version pinning** — centralized dependency version sets with configurable strategies
@@ -81,6 +82,16 @@ During `takumi init`, select your AI agent. Takumi creates the appropriate confi
 
 Six built-in skills: **operator**, **diagnose**, **review**, **optimize**, **onboard**, **doc-writer**. See [AI Skills](docs/user/ai-skills.md) for details.
 
+### MCP Server
+
+Takumi includes a Model Context Protocol (MCP) server that lets AI agents operate your workspace directly — no copy-paste needed.
+
+```bash
+takumi mcp serve    # Start the MCP server over stdio
+```
+
+The server exposes 7 tools: `takumi_status`, `takumi_build`, `takumi_test`, `takumi_diagnose`, `takumi_affected`, `takumi_validate`, `takumi_graph`. Add `.mcp.json` to your project root for automatic Claude Code integration. See [Commands Reference](docs/user/commands.md) for details.
+
 ## Building from Source
 
 ```bash
@@ -96,4 +107,4 @@ Requires Go 1.26+.
 
 ## License
 
-[PolyForm Noncommercial 1.0.0](LICENSE) — free for personal, educational, research, and nonprofit use. Not for commercial purposes.
+[GNU Affero General Public License v3.0 (AGPLv3)](LICENSE) — free to use, modify, and distribute. Derivative works and network-accessible services must release source under the same license.

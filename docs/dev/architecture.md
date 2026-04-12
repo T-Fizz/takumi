@@ -18,6 +18,7 @@ src/
   graph/                       # Dependency DAG, topological sort
   cache/                       # Content-addressed build cache
   executor/                    # Phase execution, parallelism, logging
+  mcp/                         # MCP server (Model Context Protocol)
   skills/                      # AI skill loading and rendering
     builtin/                   # Embedded YAML skill templates
   ui/                          # Terminal styling (lipgloss)
@@ -76,6 +77,12 @@ Loads AI skill templates from three sources:
 
 Template rendering is simple string substitution: `{{key}}` placeholders are replaced with values from a `map[string]string`. No loops, conditionals, or filters.
 
+### `mcp`
+
+Model Context Protocol server that exposes Takumi operations as tools for AI agents. Uses [mcp-go](https://github.com/mark3labs/mcp-go) SDK with stdio transport. The server registers 7 tools (status, build, test, diagnose, affected, validate, graph) and serializes execution with `WorkerPoolSize(1)`.
+
+Build/test output goes to log files — tool results return summaries and file paths to reduce token consumption. All handlers set `executor.Quiet = true` to prevent terminal output from corrupting the stdio JSON-RPC transport.
+
 ### `cli`
 
 One file per command group (e.g., `build.go`, `ai.go`, `env.go`, `init.go`). Each file registers its commands in an `init()` function. Commands that need workspace context call `requireWorkspace()`, which detects and loads the workspace or exits with an error.
@@ -126,9 +133,33 @@ takumi ai diagnose api
     └─ Print rendered prompt to stdout
 ```
 
+## Data Flow: MCP Tool Call
+
+```
+Agent calls takumi_build(affected=true)
+    │
+    ├─ MCP server receives JSON-RPC request over stdio
+    ├─ handleBuild() dispatched (WorkerPoolSize=1 serializes)
+    │
+    ├─ os.Getwd() → workspace.Load()
+    ├─ graph.Build() → graph.Sort()
+    ├─ gitChangedFiles() → mapFilesToPackages() → filter packages
+    │
+    ├─ executor.Run() with Quiet=true
+    │   ├─ Terminal output → io.Discard (protect stdio transport)
+    │   ├─ Log files → .takumi/logs/<pkg>.<phase>.log (still written)
+    │   └─ Results collected
+    │
+    ├─ Format summary: "Build completed: 2 passed, 1 cached"
+    ├─ Append per-package results + log file paths
+    │
+    └─ Return gomcp.NewToolResultText(summary)
+        → serialized as JSON-RPC response over stdio
+```
+
 ## Key Design Decisions
 
-**No daemon, no server.** Takumi is a stateless CLI. All state lives in the filesystem (`.takumi/` directory). This makes it predictable and easy to debug.
+**No daemon, optional server.** Takumi is a stateless CLI. All state lives in the filesystem (`.takumi/` directory). The MCP server (`takumi mcp serve`) runs only when invoked by an AI agent and communicates over stdio — no background processes or ports.
 
 **Shell commands, not plugins.** Phases are plain shell commands. Takumi doesn't need language-specific plugins — if it runs in your shell, it runs in Takumi.
 

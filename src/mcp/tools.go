@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -54,6 +55,7 @@ var testTool = gomcp.NewTool("takumi_test",
 var diagnoseTool = gomcp.NewTool("takumi_diagnose",
 	gomcp.WithDescription("Diagnose a build or test failure. Returns failure context: log file path, exit code, changed files, dependency chain, and environment status."),
 	gomcp.WithString("package", gomcp.Required(), gomcp.Description("Package name to diagnose.")),
+	gomcp.WithString("phase", gomcp.Description("Phase to diagnose (e.g. 'build', 'test'). If omitted, returns the most recent failing log.")),
 )
 
 var affectedTool = gomcp.NewTool("takumi_affected",
@@ -205,6 +207,12 @@ func handlePhase(_ context.Context, request gomcp.CallToolRequest, phase string)
 		Quiet:    true,
 	})
 
+	// If the executor failed before producing any results (e.g. cycle detection),
+	// return the error directly so the agent sees the root cause.
+	if execErr != nil && len(results) == 0 {
+		return gomcp.NewToolResultError(execErr.Error()), nil
+	}
+
 	// Record metrics for non-cached results
 	if len(results) > 0 {
 		var executed []executor.Result
@@ -293,15 +301,45 @@ func handleDiagnose(_ context.Context, request gomcp.CallToolRequest) (*gomcp.Ca
 	}
 
 	logDir := filepath.Join(ws.Root, workspace.MarkerDir, "logs")
+	requestedPhase := request.GetString("phase", "")
 
-	// Find most recent log (prefer test over build — test failures are more actionable)
+	// Find the right log to diagnose. Strategy:
+	// 1. If a phase was explicitly requested, use that log.
+	// 2. Otherwise, prefer the most recent failing log (non-zero exit code).
+	// 3. Fall back to the most recent log of any kind.
 	var logFile, phase string
-	for _, p := range []string{"test", "build"} {
-		path := filepath.Join(logDir, fmt.Sprintf("%s.%s.log", pkgName, p))
+	if requestedPhase != "" {
+		path := filepath.Join(logDir, fmt.Sprintf("%s.%s.log", pkgName, requestedPhase))
 		if info, serr := os.Stat(path); serr == nil && info.Size() > 0 {
 			logFile = path
-			phase = p
-			break
+			phase = requestedPhase
+		}
+	} else {
+		var fallbackFile, fallbackPhase string
+		var fallbackTime time.Time
+		for _, p := range []string{"build", "test"} {
+			path := filepath.Join(logDir, fmt.Sprintf("%s.%s.log", pkgName, p))
+			info, serr := os.Stat(path)
+			if serr != nil || info.Size() == 0 {
+				continue
+			}
+			// Track as fallback if it's the newest log
+			if fallbackFile == "" || info.ModTime().After(fallbackTime) {
+				fallbackFile = path
+				fallbackPhase = p
+				fallbackTime = info.ModTime()
+			}
+			// Prefer failing logs (non-zero exit code)
+			if exitCode := logExitCode(path); exitCode != 0 {
+				if logFile == "" || info.ModTime().After(fallbackTime) {
+					logFile = path
+					phase = p
+				}
+			}
+		}
+		if logFile == "" {
+			logFile = fallbackFile
+			phase = fallbackPhase
 		}
 	}
 
@@ -624,4 +662,24 @@ func capitalize(s string) string {
 		return s
 	}
 	return strings.ToUpper(s[:1]) + s[1:]
+}
+
+// logExitCode reads the exit code trailer from a takumi log file.
+// Returns -1 if the file can't be read or has no exit code line.
+func logExitCode(path string) int {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return -1
+	}
+	lines := strings.Split(string(data), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(lines[i])
+		if strings.HasPrefix(line, "# exit code:") {
+			code, cerr := strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(line, "# exit code:")))
+			if cerr == nil {
+				return code
+			}
+		}
+	}
+	return -1
 }

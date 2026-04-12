@@ -250,6 +250,7 @@ type RunOptions struct {
     Packages []string
     Parallel bool
     NoCache  bool
+    Quiet    bool      // suppress terminal output (log files still written)
 }
 ```
 
@@ -261,6 +262,83 @@ func Run(ws *workspace.Info, opts RunOptions) ([]Result, error)
 
 // RecordMetrics appends build results to .takumi/metrics.json.
 func RecordMetrics(metricsFile string, results []Result) error
+```
+
+## mcp
+
+MCP (Model Context Protocol) server for AI agent integration. Import path: `github.com/tfitz/takumi/src/mcp`.
+
+### Functions
+
+```go
+// NewServer creates a configured MCP server with all 7 tools registered.
+// Server name: "takumi", version: "0.1.0".
+func NewServer() *server.MCPServer
+```
+
+### Tools
+
+The server exposes 7 tools via the MCP protocol:
+
+| Tool | Parameters | Description |
+|------|-----------|-------------|
+| `takumi_status` | — | Workspace dashboard |
+| `takumi_build` | `packages?`, `affected?`, `no_cache?` | Build in dependency order |
+| `takumi_test` | `packages?`, `affected?`, `no_cache?` | Run test phase |
+| `takumi_diagnose` | `package` (required) | Read failure logs |
+| `takumi_affected` | `since?` | Changed packages + dependents |
+| `takumi_validate` | — | Config validation |
+| `takumi_graph` | — | Dependency graph |
+
+### Handler Pattern
+
+All tool handlers follow the same signature and pattern:
+
+```go
+func handleToolName(ctx context.Context, req gomcp.CallToolRequest) (*gomcp.CallToolResult, error) {
+    // 1. Load workspace (returns tool error if not found)
+    ws, err := loadWorkspace()
+    if err != nil {
+        return gomcp.NewToolResultError(err.Error()), nil
+    }
+
+    // 2. Parse parameters from request
+    pkgName, _ := req.RequireString("package")     // required param
+    affected, _ := req.GetBool("affected")          // optional param
+
+    // 3. Do work (build, validate, etc.)
+    results, err := executor.Run(ws, executor.RunOptions{
+        Phase: "build",
+        Quiet: true,  // suppress terminal output for MCP
+    })
+
+    // 4. Format and return result
+    //    - Business failures (build errors, validation errors): gomcp.NewToolResultError()
+    //    - Infrastructure failures: return nil, err
+    //    - Success: gomcp.NewToolResultText(summary)
+    if err != nil {
+        return gomcp.NewToolResultError(formatFailure(results)), nil
+    }
+    return gomcp.NewToolResultText(formatSuccess(results)), nil
+}
+```
+
+Key conventions:
+- `gomcp.NewToolResultError()` for failures the LLM should see and act on
+- Go `error` returns only for infrastructure problems (can't load workspace, etc.)
+- `Quiet: true` on all executor calls to prevent stdout corruption of stdio transport
+- Return log file paths instead of inline log content to reduce token consumption
+
+### Usage
+
+```go
+import (
+    takumimcp "github.com/tfitz/takumi/src/mcp"
+    "github.com/mark3labs/mcp-go/server"
+)
+
+s := takumimcp.NewServer()
+server.ServeStdio(s, server.WithWorkerPoolSize(1))
 ```
 
 ## skills

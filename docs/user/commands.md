@@ -188,6 +188,56 @@ Install a git pre-commit hook that auto-regenerates docs.
 
 Remove the pre-commit hook.
 
+## MCP Server
+
+### `takumi mcp serve`
+
+Start a Model Context Protocol server over stdio. This allows AI agents (Claude Code, etc.) to operate the workspace directly via JSON-RPC.
+
+```bash
+takumi mcp serve
+```
+
+The server exposes 7 tools:
+
+| Tool | Description |
+|------|-------------|
+| `takumi_status` | Workspace health dashboard |
+| `takumi_build` | Build packages (supports `packages`, `affected`, `no_cache` params) |
+| `takumi_test` | Run tests (same params as build) |
+| `takumi_diagnose` | Read build/test failure logs for a package |
+| `takumi_affected` | List packages affected by file changes |
+| `takumi_validate` | Validate all config files |
+| `takumi_graph` | Show dependency graph |
+
+For Claude Code integration, add a `.mcp.json` file to your project root:
+
+```json
+{
+  "mcpServers": {
+    "takumi": {
+      "command": "go",
+      "args": ["run", "./cmd/takumi", "mcp", "serve"]
+    }
+  }
+}
+```
+
+Or if Takumi is installed (recommended — avoids `go run` startup time on every invocation):
+
+```json
+{
+  "mcpServers": {
+    "takumi": {
+      "command": "takumi",
+      "args": ["mcp", "serve"]
+    }
+  }
+}
+```
+
+The `go run` variant is suitable for development only; use the installed binary for regular use.
+
 ## Initialization
 
 ### `takumi init [name]`

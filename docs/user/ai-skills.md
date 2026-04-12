@@ -104,6 +104,31 @@ takumi docs generate --ai
 
 **Auto-context collected:** `command_tree`, `config_schemas`, `recent_commits`, `existing_docs`
 
+## MCP Server Integration
+
+For AI agents that support the Model Context Protocol (MCP), Takumi provides a built-in server that exposes workspace operations as tools. This is the most direct integration — the agent operates the workspace without copy-pasting prompts.
+
+```bash
+takumi mcp serve    # Start over stdio
+```
+
+The MCP server exposes 7 tools: `takumi_status`, `takumi_build`, `takumi_test`, `takumi_diagnose`, `takumi_affected`, `takumi_validate`, `takumi_graph`. Build and test output goes to `.takumi/logs/` files — the tool returns a summary and file path to keep token usage low.
+
+To configure Claude Code, add `.mcp.json` to your project root:
+
+```json
+{
+  "mcpServers": {
+    "takumi": {
+      "command": "takumi",
+      "args": ["mcp", "serve"]
+    }
+  }
+}
+```
+
+See [Commands Reference](commands.md#mcp-server) for full details.
+
 ## Skill Commands
 
 ```bash
@@ -193,7 +218,24 @@ Skill prompts use `{{variable}}` placeholders. At render time, Takumi replaces e
 
 ## Workflow
 
-A typical AI-assisted workflow using skills:
+### With MCP (recommended for Claude Code)
+
+When MCP is configured, the AI agent calls Takumi tools directly — no copy-paste needed:
+
+```
+Agent: "Let me check the workspace."        → takumi_status
+Agent: "Building affected packages..."      → takumi_build(affected=true)
+Agent: "Build failed. Diagnosing..."        → takumi_diagnose(package="api")
+Agent: "Found the issue, fixing..."         → (edits code)
+Agent: "Rebuilding..."                      → takumi_build(packages="api")
+Agent: "Tests passing, checking graph..."   → takumi_graph
+```
+
+The agent reads log files at the paths returned by tools. See [MCP Server Integration](#mcp-server-integration) above.
+
+### Without MCP (manual workflow)
+
+For agents that don't support MCP, use the CLI to generate prompts:
 
 ```bash
 # 1. Check workspace state

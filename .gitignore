@@ -8,6 +8,18 @@ coverage/
 .takumi/cache/
 .takumi/metrics.json
 
+# E2E transcript logs
+local-project.log
+github-clone.log
+vibe-coder.log
+polyglot.log
+cascading-failure.log
+cache-invalidation.log
+recovery.log
+multi-session.log
+add-package.log
+promptfoo-results.*
+
 # AI agent context files
 CLAUDE.md
 .claude/

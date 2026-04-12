@@ -105,6 +105,28 @@ tests:
         value: "Root cause category"
 ```
 
+## E2E Simulation Tests
+
+End-to-end tests in `src/mcp/e2e_test.go` simulate full agent workflows by calling MCP tool handlers in sequence against real (temporary) workspaces. These test the complete cycle from workspace setup through build/test/diagnose/fix iterations.
+
+### Scenarios
+
+**TestE2E_LocalProject** (18 steps) — A developer with an existing local project: init → status → validate → graph → build → test → cache verification → feature change → affected analysis → targeted build → test failure → diagnose → fix → green build → metrics check → final status.
+
+**TestE2E_GitHubClone** (13 steps) — A developer cloning a multi-package project from GitHub: 3-package workspace with sources → onboard → graph → validate → full build → full test → modify lib → blast radius analysis → affected build → targeted test → full test → cache → final status.
+
+**TestE2E_VibeCoder** (20 steps) — A first-time user with no coding experience: empty dir → error handling → scaffold workspace + 3 packages with dependencies → full workflow through build/test/failure/diagnose/fix cycle → ship build → build history verification.
+
+### Running
+
+E2E tests run as part of the standard test suite:
+
+```bash
+go test ./src/mcp/ -run TestE2E -v
+```
+
+Each scenario creates a temporary directory, builds a real workspace with config files, and calls tool handlers directly (no network). Tests verify tool output text, error conditions, and state changes across the full workflow.
+
 ### Troubleshooting
 
 **"npx not found"** — Install Node.js 18+. Promptfoo runs via `npx --yes promptfoo@latest`.

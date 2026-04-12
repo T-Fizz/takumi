@@ -33,6 +33,7 @@ src/workspace/               Workspace detection + package discovery
 src/graph/                   Dependency DAG + topological sort
 src/cache/                   Content-addressed build cache
 src/executor/                Phase execution + parallelism
+src/mcp/                     MCP server (Model Context Protocol)
 src/skills/                  AI skill templates
 src/skills/builtin/          Embedded YAML skills
 src/ui/                      Terminal styling
@@ -56,6 +57,41 @@ docs/dev/                    Developer documentation
 4. Add a command or integration point in `src/cli/ai.go`
 5. Add integration tests in `tests/integration/`
 
+## Adding an MCP Tool
+
+1. Define the tool in `src/mcp/tools.go` using the `gomcp.NewTool()` builder:
+
+```go
+var myTool = gomcp.NewTool("takumi_mytool",
+    gomcp.WithDescription("What this tool does."),
+    gomcp.WithString("param", gomcp.Required(), gomcp.Description("...")),
+    gomcp.WithBoolean("flag", gomcp.Description("...")),
+)
+```
+
+2. Write the handler function following the [handler pattern](packages.md#handler-pattern):
+
+```go
+func handleMyTool(ctx context.Context, req gomcp.CallToolRequest) (*gomcp.CallToolResult, error) {
+    // Load workspace, parse params, do work, return result
+}
+```
+
+3. Register it in `registerTools()` at the top of `tools.go`:
+
+```go
+s.AddTool(myTool, handleMyTool)
+```
+
+4. Add tests in `src/mcp/tools_test.go` — cover success, error, and edge cases
+5. Update `CODEBASE.md` and `docs/user/commands.md` with the new tool
+
+Key rules:
+- Use `gomcp.NewToolResultError()` for failures the agent should see, not Go `error`
+- Set `executor.RunOptions.Quiet = true` on any executor calls
+- Return file paths for large output, not inline content
+- Use the `gomcp` alias for `github.com/mark3labs/mcp-go/mcp` (avoids collision with `package mcp`)
+
 ## Code Style
 
 - Follow standard Go conventions (`go fmt`, `go vet`)
@@ -65,4 +101,4 @@ docs/dev/                    Developer documentation
 
 ## License
 
-[PolyForm Noncommercial 1.0.0](../../LICENSE) — contributions are accepted under the same license.
+[GNU Affero General Public License v3.0 (AGPLv3)](../../LICENSE) — contributions are accepted under the same license.
