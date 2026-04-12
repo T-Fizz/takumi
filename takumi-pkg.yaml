@@ -16,9 +16,9 @@ phases:
       - go vet ./...
   release:
     pre:
-      - test -n "$VERSION" || { echo "Usage: VERSION=x.y.z t run release"; exit 1; }
-      - echo "Releasing v${VERSION}..."
+      - 'test -n "$VERSION" || { echo "Usage: VERSION=x.y.z t run release"; exit 1; }'
+      - 'echo "Releasing v${VERSION}..."'
     commands:
       - scripts/release.sh
     post:
-      - echo "Released v${VERSION}"
+      - 'echo "Released v${VERSION}"'

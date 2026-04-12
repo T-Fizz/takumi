@@ -7,3 +7,4 @@ workspace:
     - testdata/
     - .takumi/
     - node_modules/
+    - tests/
