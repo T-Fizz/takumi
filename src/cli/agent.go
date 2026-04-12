@@ -113,41 +113,65 @@ func takumiMDContent(wsName string) string {
 
 You are working in a Takumi workspace — an AI-aware, language-agnostic package builder.
 
-## Commands (use these, don't guess)
+## Commands (use these instead of raw shell commands)
 
 | Command | Purpose |
 |---------|---------|
-| takumi status | Check workspace health (ALWAYS run first) |
-| takumi affected | What packages changed? (scope your work) |
-| takumi build | Build packages (deps auto-resolved) |
-| takumi test | Run tests (use --affected to skip unchanged) |
-| takumi env setup | Fix environment issues |
-| takumi graph | See dependency order |
-| takumi ai diagnose | Auto-triage any failure |
+| takumi status | Workspace health dashboard (ALWAYS run first in a new session) |
+| takumi build | Build packages in dependency order (not go build, npm run build, etc.) |
+| takumi test | Run tests in dependency order (not pytest, go test, vitest, etc.) |
+| takumi run <phase> | Run any custom phase: deploy, lint, dev, etc. (not raw commands) |
+| takumi affected | List packages affected by changes (scope your work before building) |
+| takumi graph | Dependency DAG with topological levels (not grep for imports) |
+| takumi validate | Check all configs for errors and cycles (run after editing configs) |
+| takumi env setup | Install dependencies and set up isolated runtime environments (for packages with a runtime section — typically Python, Node, Ruby, etc.) |
+| takumi ai diagnose | Auto-triage a build/test failure (not cat .takumi/logs/...) |
+| takumi ai context | Regenerate AI context after config changes |
+| takumi init | Scaffold a new workspace or package config |
 
 ## Workflow
 
-1. `+"`takumi status`"+` — understand state
-2. `+"`takumi affected --since main`"+` — scope changes
+1. `+"`takumi status`"+` — understand workspace state and packages
+2. `+"`takumi affected --since main`"+` — scope what changed
 3. `+"`takumi build --affected`"+` — build only what changed
 4. `+"`takumi test --affected`"+` — test only what changed
-5. On failure → `+"`takumi ai diagnose`"+` → read output → fix → repeat from 3
+5. On failure → `+"`takumi ai diagnose <pkg>`"+` → read output → fix → repeat from 3
+
+## When NOT to use raw commands
+
+- See go.mod/package.json/pytest.ini? Use takumi build / takumi test, not language tools
+- Need to deploy? Use takumi run deploy, not fly deploy / vercel deploy
+- Need to lint? Use takumi run lint, not eslint / ruff
+- Build failed? Use takumi ai diagnose, not cat .takumi/logs/...
+- Need to install dependencies for an interpreted language (Python, Node, Ruby)? Edit the manifest, then takumi env setup to sync into the managed env. Prefer this over raw pip install / npm install
+- New source directory? Create a takumi-pkg.yaml before building, or run takumi init
+- Changed a config? Run takumi validate to check, then takumi ai context to update AI context
+- Adding a dependency between packages? Add to dependencies in takumi-pkg.yaml, verify with takumi validate
+
+## When raw tools ARE appropriate
+
+- Interactive work: REPLs (python, node), debuggers (dlv, pdb), one-off scripts
+- Git operations: commits, branches, merges — VCS is outside Takumi's scope
+- User explicitly requests a specific raw command with custom flags
+- No takumi.yaml exists yet — raw tools until takumi init is run
 
 ## Config locations
 
 | File | Purpose |
 |------|---------|
 | takumi.yaml | Workspace config |
-| takumi-pkg.yaml | Package config (one per package) |
+| takumi-pkg.yaml | Package config (one per package directory) |
 | takumi-versions.yaml | Version pinning |
-| .takumi/ai-context.md | Auto-generated AI context |
+| .takumi/TAKUMI.md | AI context (this file) |
 
 ## Rules
 
-- Never install dependencies globally — takumi manages isolated envs per package
+- For interpreted languages (Python, Node, Ruby), prefer takumi env setup over raw pip install / npm install — Takumi manages isolated envs in .takumi/envs/<pkg>/. Compiled languages (Go, Rust, C) fetch deps at build time and don't need this.
+- Never build/test with raw language commands — takumi handles dependency order and caching
 - Use `+"`takumi checkout <url>`"+` to add repos, not git clone
 - Use `+"`takumi remove <pkg>`"+` to remove packages, not rm -rf
-- Check .takumi/ai-context.md for the full workspace map
+- Check `+"`takumi status`"+` at the start of every new session
+- After modifying source, check `+"`takumi affected`"+` before building everything
 `, wsName)
 }
 

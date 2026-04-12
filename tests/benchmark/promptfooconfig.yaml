@@ -29,6 +29,11 @@ providers:
     config:
       timeoutMs: 300000
 
+  - id: exec:bash run-scenario.sh agent-discovery
+    label: agent-discovery
+    config:
+      timeoutMs: 300000
+
 prompts:
   - "{{scenario}}"
 
@@ -190,6 +195,74 @@ tests:
         value: "STEP 15: Rebuild"
       - type: regex
         value: "(cached|PASS)"
+
+  # ─── Agent Discovery (cold start, no Takumi config) ─────────────────────────
+
+  - description: "agent-discovery: all steps pass"
+    vars:
+      scenario: agent-discovery
+    providers: [agent-discovery]
+    assert:
+      - type: contains
+        value: "ALL PASSED"
+
+  - description: "agent-discovery: status gives discovery message before init"
+    vars:
+      scenario: agent-discovery
+    providers: [agent-discovery]
+    assert:
+      - type: contains
+        value: "STEP 2"
+      - type: contains
+        value: "takumi init"
+
+  - description: "agent-discovery: TAKUMI.md has complete command reference"
+    vars:
+      scenario: agent-discovery
+    providers: [agent-discovery]
+    assert:
+      - type: contains
+        value: "found: takumi build"
+      - type: contains
+        value: "found: takumi test"
+      - type: contains
+        value: "found: takumi run"
+      - type: contains
+        value: "found: takumi affected"
+      - type: contains
+        value: "found: takumi ai diagnose"
+
+  - description: "agent-discovery: agent can build and test polyglot project"
+    vars:
+      scenario: agent-discovery
+    providers: [agent-discovery]
+    assert:
+      - type: contains
+        value: "STEP 10"
+      - type: contains
+        value: "2 passed"
+      - type: contains
+        value: "dependency order"
+
+  - description: "agent-discovery: caching works on rebuild"
+    vars:
+      scenario: agent-discovery
+    providers: [agent-discovery]
+    assert:
+      - type: contains
+        value: "STEP 12"
+      - type: contains
+        value: "cached"
+
+  - description: "agent-discovery: affected shows cascade from leaf to dependent"
+    vars:
+      scenario: agent-discovery
+    providers: [agent-discovery]
+    assert:
+      - type: contains
+        value: "STEP 13"
+      - type: contains
+        value: "cascade"
 
   # ─── Cross-scenario: documentation is language-agnostic ─────────────────────
 

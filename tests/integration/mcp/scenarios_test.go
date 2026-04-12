@@ -783,9 +783,10 @@ phases:
 
 	t.Run("status_no_marker", func(t *testing.T) {
 		text, isErr := tcall(t, tr, "takumi_status", nil)
-		assert.True(t, isErr)
-		// Should report that no workspace is found, not crash
-		assert.Contains(t, text, "no takumi workspace")
+		assert.False(t, isErr, "status returns discovery message, not an error")
+		// Should guide agent to re-init, not crash
+		assert.Contains(t, text, "not a Takumi workspace")
+		assert.Contains(t, text, "takumi init")
 	})
 
 	// ── Step 13: Recreate marker — workspace recovers ──────────────────
@@ -1138,5 +1139,291 @@ phases:
 		text, isErr := tcall(t, tr, "takumi_build", nil)
 		assert.False(t, isErr)
 		assert.Contains(t, text, "3 cached")
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 10: Fullstack workspace — agent discovers custom phases
+//
+// Models a real situation: an agent is dropped into a fullstack project
+// (backend + frontend) that has custom phases (deploy, lint, dev) beyond
+// the standard build/test. The agent must discover the workspace structure,
+// available phases, and AI context through Takumi's MCP tools.
+// ---------------------------------------------------------------------------
+
+func TestE2E_FullstackDiscovery(t *testing.T) {
+	dir := t.TempDir()
+	tr := newTranscript(t, "fullstack-discovery")
+
+	// ── Step 1: Set up fullstack workspace ─────────────────────────
+	tr.stepHeader("Set up fullstack workspace: backend (Python/Fly) + frontend (JS/Vercel)")
+	gitRun(t, dir, "init")
+	gitRun(t, dir, "config", "user.email", "dev@example.com")
+	gitRun(t, dir, "config", "user.name", "dev")
+
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, ".takumi", "logs"), 0755))
+
+	wsYAML := "workspace:\n  name: fullstack-app\n  settings:\n    parallel: true\n  ai:\n    agent: claude\n"
+	os.WriteFile(filepath.Join(dir, "takumi.yaml"), []byte(wsYAML), 0644)
+
+	// Backend — Python API with deploy, lint, and dev phases
+	backendDir := filepath.Join(dir, "backend")
+	require.NoError(t, os.MkdirAll(backendDir, 0755))
+	backendPkg := `package:
+  name: backend
+  version: 1.2.0
+runtime:
+  setup:
+    - echo "python3 -m venv {{env_dir}}"
+    - echo "pip install -r requirements.txt"
+  env:
+    PYTHONPATH: ./src
+    DATABASE_URL: postgres://localhost/dev
+phases:
+  build:
+    commands:
+      - echo "python -m compileall src/"
+  test:
+    commands:
+      - echo "pytest tests/ ... 8 passed"
+  lint:
+    commands:
+      - echo "ruff check src/ ... ok"
+  deploy:
+    commands:
+      - echo "fly deploy --app backend-prod"
+  dev:
+    commands:
+      - echo "uvicorn main:app --reload"
+ai:
+  description: "Python FastAPI backend — deployed to Fly.io"
+  notes:
+    - "Deploy requires FLY_API_TOKEN in environment"
+    - "Integration tests need DATABASE_URL pointed at Supabase"
+    - "Run lint before deploy to catch formatting issues"
+`
+	os.WriteFile(filepath.Join(backendDir, "takumi-pkg.yaml"), []byte(backendPkg), 0644)
+	os.WriteFile(filepath.Join(backendDir, "main.py"), []byte("# fastapi app\n"), 0644)
+
+	// Frontend — JS app with deploy and dev phases, depends on backend
+	frontendDir := filepath.Join(dir, "frontend")
+	require.NoError(t, os.MkdirAll(frontendDir, 0755))
+	frontendPkg := `package:
+  name: frontend
+  version: 0.8.0
+dependencies:
+  - backend
+runtime:
+  setup:
+    - echo "npm install"
+  env:
+    NODE_ENV: development
+    API_URL: http://localhost:8000
+phases:
+  build:
+    commands:
+      - echo "vite build ... done"
+  test:
+    commands:
+      - echo "vitest run ... 14 passed"
+  lint:
+    commands:
+      - echo "eslint src/ ... ok"
+  deploy:
+    commands:
+      - echo "vercel deploy --prod"
+  dev:
+    commands:
+      - echo "vite dev --port 3000"
+ai:
+  description: "React frontend — deployed to Vercel, talks to backend API"
+  notes:
+    - "API_URL must match backend deploy target"
+    - "Run build before deploy to verify production bundle"
+`
+	os.WriteFile(filepath.Join(frontendDir, "takumi-pkg.yaml"), []byte(frontendPkg), 0644)
+	os.WriteFile(filepath.Join(frontendDir, "index.js"), []byte("// react app\n"), 0644)
+
+	gitRun(t, dir, "add", "-A")
+	gitRun(t, dir, "commit", "-m", "initial fullstack workspace")
+	tr.action("Workspace: backend -> frontend, both have build/test/lint/deploy/dev phases")
+
+	chdir(t, dir)
+	tr.setRoot(dir)
+
+	// ── Step 2: Agent lands in workspace, checks status ────────────
+	tr.stepHeader("Agent discovers the workspace via status")
+	t.Run("status_shows_packages", func(t *testing.T) {
+		text, isErr := tcall(t, tr, "takumi_status", nil)
+		assert.False(t, isErr)
+		assert.Contains(t, text, "Workspace: fullstack-app")
+		assert.Contains(t, text, "Packages (2)")
+		assert.Contains(t, text, "backend")
+		assert.Contains(t, text, "frontend")
+		assert.Contains(t, text, "AI Agent: claude")
+	})
+
+	// ── Step 3: Agent checks dependency graph ──────────────────────
+	tr.stepHeader("Agent checks dependency graph — frontend depends on backend")
+	t.Run("graph_shows_dependency", func(t *testing.T) {
+		text, isErr := tcall(t, tr, "takumi_graph", nil)
+		assert.False(t, isErr)
+		assert.Contains(t, text, "2 packages")
+		assert.Contains(t, text, "backend")
+		assert.Contains(t, text, "frontend")
+	})
+
+	// ── Step 4: Agent validates config ─────────────────────────────
+	tr.stepHeader("Agent validates — all configs pass")
+	t.Run("validate_clean", func(t *testing.T) {
+		text, isErr := tcall(t, tr, "takumi_validate", nil)
+		assert.False(t, isErr)
+		assert.Contains(t, text, "All configurations valid")
+	})
+
+	// ── Step 5: Status reports phase count (5 per package) ─────────
+	tr.stepHeader("Status reports custom phases — agent can see deploy/lint/dev exist")
+	t.Run("status_shows_phase_count", func(t *testing.T) {
+		text, isErr := tcall(t, tr, "takumi_status", nil)
+		assert.False(t, isErr)
+		// Each package has 5 phases (build, test, lint, deploy, dev)
+		assert.Contains(t, text, "5 phases")
+		// Both have runtimes
+		assert.Contains(t, text, "runtime")
+	})
+
+	// ── Step 6: Agent builds both in parallel ──────────────────────
+	tr.stepHeader("Agent builds — backend first (leaf), then frontend")
+	t.Run("build_both", func(t *testing.T) {
+		text, isErr := tcall(t, tr, "takumi_build", nil)
+		assert.False(t, isErr)
+		assert.Contains(t, text, "Build completed: 2 passed")
+	})
+
+	// ── Step 7: Agent runs tests ───────────────────────────────────
+	tr.stepHeader("Agent runs tests — pytest + vitest in dependency order")
+	t.Run("test_both", func(t *testing.T) {
+		text, isErr := tcall(t, tr, "takumi_test", nil)
+		assert.False(t, isErr)
+		assert.Contains(t, text, "Test completed: 2 passed")
+	})
+
+	// ── Step 8: Rebuild is cached ���─────────────────────────────────
+	tr.stepHeader("Rebuild — everything cached, no wasted cycles")
+	t.Run("build_cached", func(t *testing.T) {
+		text, isErr := tcall(t, tr, "takumi_build", nil)
+		assert.False(t, isErr)
+		assert.Contains(t, text, "2 cached")
+	})
+
+	// ── Step 9: Agent modifies backend, checks affected ���───────────
+	tr.stepHeader("Modify backend — frontend should be affected too (downstream dep)")
+	os.WriteFile(filepath.Join(backendDir, "main.py"), []byte("# fastapi app v2\nimport auth\n"), 0644)
+	tr.action("Modified backend/main.py")
+
+	t.Run("affected_cascades", func(t *testing.T) {
+		text, isErr := tcall(t, tr, "takumi_affected", nil)
+		assert.False(t, isErr)
+		assert.Contains(t, text, "backend")
+		assert.Contains(t, text, "frontend")
+		assert.Contains(t, text, "Total affected: 2")
+	})
+
+	// ── Step 10: Targeted build of only affected packages ──────────
+	tr.stepHeader("Build only affected packages")
+	t.Run("build_affected", func(t *testing.T) {
+		text, isErr := tcall(t, tr, "takumi_build", map[string]any{"affected": true})
+		assert.False(t, isErr)
+		assert.Contains(t, text, "2 passed")
+	})
+
+	// ── Step 11: Break the frontend build ──────────────────────────
+	tr.stepHeader("Frontend build breaks — agent needs to diagnose")
+	frontendBroken := `package:
+  name: frontend
+  version: 0.8.0
+dependencies:
+  - backend
+runtime:
+  setup:
+    - echo "npm install"
+  env:
+    NODE_ENV: development
+    API_URL: http://localhost:8000
+phases:
+  build:
+    commands:
+      - "echo ERROR: Cannot find module react && exit 1"
+  test:
+    commands:
+      - echo "vitest run ... 14 passed"
+  lint:
+    commands:
+      - echo "eslint src/ ... ok"
+  deploy:
+    commands:
+      - echo "vercel deploy --prod"
+  dev:
+    commands:
+      - echo "vite dev --port 3000"
+ai:
+  description: "React frontend — deployed to Vercel, talks to backend API"
+  notes:
+    - "API_URL must match backend deploy target"
+    - "Run build before deploy to verify production bundle"
+`
+	os.WriteFile(filepath.Join(frontendDir, "takumi-pkg.yaml"), []byte(frontendBroken), 0644)
+	tr.action("Broke frontend build — missing react module")
+
+	t.Run("frontend_build_fails", func(t *testing.T) {
+		text, isErr := tcall(t, tr, "takumi_build", nil)
+		assert.True(t, isErr)
+		assert.Contains(t, text, "failed")
+		assert.Contains(t, text, "frontend")
+		// Backend should be cached — it didn't change
+		assert.Contains(t, text, "cached")
+	})
+
+	// ── Step 12: Agent diagnoses the frontend failure ──────────────
+	tr.stepHeader("Agent diagnoses frontend — sees module error and AI notes")
+	t.Run("diagnose_frontend", func(t *testing.T) {
+		text, isErr := tcall(t, tr, "takumi_diagnose", map[string]any{"package": "frontend"})
+		assert.False(t, isErr)
+		assert.Contains(t, text, "Diagnosis for frontend")
+		assert.Contains(t, text, "Exit code: 1")
+		assert.Contains(t, text, "Dependencies: backend")
+		assert.Contains(t, text, "Runtime: configured but not set up")
+	})
+
+	// ── Step 13: Agent fixes the build ─────────────────────────────
+	tr.stepHeader("Agent fixes the build and verifies")
+	os.WriteFile(filepath.Join(frontendDir, "takumi-pkg.yaml"), []byte(frontendPkg), 0644)
+	tr.action("Fixed frontend build command")
+
+	t.Run("frontend_builds_after_fix", func(t *testing.T) {
+		text, isErr := tcall(t, tr, "takumi_build", nil)
+		assert.False(t, isErr)
+		assert.Contains(t, text, "Build completed")
+		assert.Contains(t, text, "frontend")
+	})
+
+	// ── Step 14: Build just one package by name ────────────────────
+	tr.stepHeader("Targeted build — just backend")
+	t.Run("build_single_package", func(t *testing.T) {
+		text, isErr := tcall(t, tr, "takumi_build", map[string]any{"packages": "backend", "no_cache": true})
+		assert.False(t, isErr)
+		assert.Contains(t, text, "Build completed: 1 passed")
+		assert.Contains(t, text, "backend")
+	})
+
+	// ── Step 15: Final status — agent sees full picture ────────────
+	tr.stepHeader("Final status — agent has full workspace context")
+	t.Run("final_status", func(t *testing.T) {
+		text, isErr := tcall(t, tr, "takumi_status", nil)
+		assert.False(t, isErr)
+		assert.Contains(t, text, "fullstack-app")
+		assert.Contains(t, text, "backend v1.2.0")
+		assert.Contains(t, text, "frontend v0.8.0")
+		assert.Contains(t, text, "Recent Builds")
 	})
 }

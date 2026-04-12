@@ -55,6 +55,10 @@ providers:
   - id: exec:bash run-skill.sh build --dry-run
     label: dry-run
 
+  # --- Operator skill ---
+  - id: exec:bash run-skill.sh ai skill run operator
+    label: operator
+
 prompts:
   # promptfoo requires a prompt but exec providers ignore it
   - "{{skill_name}}"
@@ -277,3 +281,327 @@ tests:
         value: "(will run|cached)"
       - type: regex
         value: "\\d+ packages?"
+
+  # ═══════════════════════════════════════════════════════════════════
+  # Operator Skill — Agent Guidance Tests
+  #
+  # These verify the operator skill contains instructions clear enough
+  # that an LLM would choose Takumi over raw alternatives in every
+  # common scenario.
+  # ═══════════════════════════════════════════════════════════════════
+
+  # ─── Build & Test: prefer takumi over raw tools ─────────────────────
+  - description: "operator: agent sees go.mod → told to use takumi build not go build"
+    vars:
+      skill_name: operator-build
+    providers: [operator]
+    assert:
+      - type: contains
+        value: "takumi build"
+      - type: regex
+        value: "not.*go build"
+
+  - description: "operator: agent sees package.json → told to use takumi build not npm"
+    vars:
+      skill_name: operator-build-npm
+    providers: [operator]
+    assert:
+      - type: contains
+        value: "takumi build"
+      - type: contains
+        value: "npm run build"
+
+  - description: "operator: agent sees pytest → told to use takumi test not pytest"
+    vars:
+      skill_name: operator-test
+    providers: [operator]
+    assert:
+      - type: contains
+        value: "takumi test"
+      - type: regex
+        value: "(not pytest|not.*go test|not.*vitest)"
+
+  - description: "operator: agent wants custom phase → told to use takumi run"
+    vars:
+      skill_name: operator-run
+    providers: [operator]
+    assert:
+      - type: contains
+        value: "takumi run"
+      - type: regex
+        value: "(deploy|lint|dev)"
+      - type: contains
+        value: "not raw commands"
+
+  # ─── Setup & Scaffolding ────────────────────────────────────────────
+  - description: "operator: no config exists → told to create takumi-pkg.yaml or run init"
+    vars:
+      skill_name: operator-init
+    providers: [operator]
+    assert:
+      - type: contains
+        value: "takumi-pkg.yaml"
+      - type: contains
+        value: "takumi init"
+
+  - description: "operator: adding dependency → told to add to config and validate"
+    vars:
+      skill_name: operator-deps
+    providers: [operator]
+    assert:
+      - type: contains
+        value: "dependencies"
+      - type: contains
+        value: "takumi validate"
+
+  - description: "operator: config changed → told to run validate and ai context"
+    vars:
+      skill_name: operator-config-change
+    providers: [operator]
+    assert:
+      - type: contains
+        value: "takumi validate"
+      - type: contains
+        value: "takumi ai context"
+
+  # ─── Failure & Recovery ─────────────────────────────────────────────
+  - description: "operator: build fails → told to use diagnose not read logs"
+    vars:
+      skill_name: operator-diagnose
+    providers: [operator]
+    assert:
+      - type: contains
+        value: "takumi ai diagnose"
+      - type: regex
+        value: "not.*cat.*logs"
+
+  - description: "operator: diagnose workflow is step 5 in the workflow"
+    vars:
+      skill_name: operator-workflow-failure
+    providers: [operator]
+    assert:
+      - type: contains
+        value: "On failure"
+      - type: contains
+        value: "takumi ai diagnose"
+      - type: contains
+        value: "repeat from 3"
+
+  - description: "operator: config invalid → told to run validate first"
+    vars:
+      skill_name: operator-validate
+    providers: [operator]
+    assert:
+      - type: contains
+        value: "takumi validate"
+      - type: contains
+        value: "errors and cycles"
+
+  # ─── Change Management ─────────────────────────────────────────────
+  - description: "operator: agent modifies source → told to check affected first"
+    vars:
+      skill_name: operator-affected
+    providers: [operator]
+    assert:
+      - type: contains
+        value: "takumi affected"
+      - type: contains
+        value: "before building"
+
+  - description: "operator: workflow uses --affected for scoped builds"
+    vars:
+      skill_name: operator-scoped-build
+    providers: [operator]
+    assert:
+      - type: contains
+        value: "build --affected"
+      - type: contains
+        value: "test --affected"
+
+  # ─── Context & Onboarding ──────────────────────────────────────────
+  - description: "operator: new session → told to run status first"
+    vars:
+      skill_name: operator-session-start
+    providers: [operator]
+    assert:
+      - type: contains
+        value: "ALWAYS run first"
+      - type: contains
+        value: "takumi status"
+      - type: contains
+        value: "new session"
+
+  - description: "operator: project structure → told to use graph not grep"
+    vars:
+      skill_name: operator-graph
+    providers: [operator]
+    assert:
+      - type: contains
+        value: "takumi graph"
+      - type: regex
+        value: "not.*grep"
+
+  - description: "operator: status is step 1 in the workflow"
+    vars:
+      skill_name: operator-workflow-start
+    providers: [operator]
+    assert:
+      - type: regex
+        value: "1\\..*takumi status"
+
+  # ─── Environment ───────────────────────────────────────────────────
+  - description: "operator: runtime config → told to use env setup for interpreted languages"
+    vars:
+      skill_name: operator-env
+    providers: [operator]
+    assert:
+      - type: contains
+        value: "takumi env setup"
+      - type: contains
+        value: "Python, Node, Ruby"
+
+  - description: "operator: dependency install → edit manifest then env setup"
+    vars:
+      skill_name: operator-runtime
+    providers: [operator]
+    assert:
+      - type: contains
+        value: "edit the manifest"
+      - type: contains
+        value: "takumi env setup"
+      - type: contains
+        value: "Prefer this over raw"
+
+  - description: "operator: compiled languages don't need env setup"
+    vars:
+      skill_name: operator-isolation
+    providers: [operator]
+    assert:
+      - type: contains
+        value: "Compiled languages"
+      - type: contains
+        value: "fetch deps at build time"
+      - type: contains
+        value: ".takumi/envs/"
+
+  # ─── MCP ────────────────────────────────────────────────────────────
+  - description: "operator: MCP tools → told to prefer over CLI"
+    vars:
+      skill_name: operator-mcp
+    providers: [operator]
+    assert:
+      - type: contains
+        value: "MCP"
+      - type: contains
+        value: "takumi_build"
+      - type: contains
+        value: "prefer"
+
+  - description: "operator: MCP fallback → told to fall back to CLI on error"
+    vars:
+      skill_name: operator-mcp-fallback
+    providers: [operator]
+    assert:
+      - type: contains
+        value: "Fall back to CLI"
+
+  # ─── When Raw Tools ARE Appropriate ─────────────────────────────────
+  - description: "operator: interactive/REPL work is ok with raw tools"
+    vars:
+      skill_name: operator-raw-repl
+    providers: [operator]
+    assert:
+      - type: regex
+        value: "REPL|Interactive"
+      - type: regex
+        value: "python.*node|`python`.*`node`"
+
+  - description: "operator: git operations are outside Takumi's scope"
+    vars:
+      skill_name: operator-raw-git
+    providers: [operator]
+    assert:
+      - type: regex
+        value: "[Gg]it.*outside.*scope|VCS.*outside.*scope"
+
+  - description: "operator: raw tools ok when no workspace exists yet"
+    vars:
+      skill_name: operator-raw-no-workspace
+    providers: [operator]
+    assert:
+      - type: regex
+        value: "No takumi.yaml|no takumi.yaml"
+      - type: regex
+        value: "raw tools|takumi init"
+
+  - description: "operator: user explicit raw command request is respected"
+    vars:
+      skill_name: operator-raw-explicit
+    providers: [operator]
+    assert:
+      - type: regex
+        value: "[Uu]ser.*explicit|[Uu]ser.*request.*raw|[Uu]ser.*specific.*raw"
+
+  # ─── Lint & Deploy Phases ──────────────────────────────────────────
+  - description: "operator: lint → told to use takumi run lint not raw linter"
+    vars:
+      skill_name: operator-lint
+    providers: [operator]
+    assert:
+      - type: contains
+        value: "takumi run lint"
+      - type: regex
+        value: "not.*eslint|not.*ruff"
+
+  - description: "operator: deploy → told to use takumi run deploy not raw deploy"
+    vars:
+      skill_name: operator-deploy
+    providers: [operator]
+    assert:
+      - type: contains
+        value: "takumi run deploy"
+      - type: regex
+        value: "not.*fly deploy|not.*vercel deploy"
+
+  # ─── Package Config Essentials ─────────────────────────────────────
+  - description: "operator: ai.description and ai.notes mentioned for package config"
+    vars:
+      skill_name: operator-ai-config
+    providers: [operator]
+    assert:
+      - type: contains
+        value: "ai.description"
+      - type: contains
+        value: "ai.notes"
+
+  - description: "operator: phases are arbitrary — not limited to build/test"
+    vars:
+      skill_name: operator-arbitrary-phases
+    providers: [operator]
+    assert:
+      - type: regex
+        value: "arbitrary|anything you define"
+      - type: regex
+        value: "build.*test.*lint.*deploy|deploy.*lint"
+
+  # ─── Checkout Rule ─────────────────────────────────────────────────
+  - description: "operator: told to use takumi checkout not git clone"
+    vars:
+      skill_name: operator-checkout
+    providers: [operator]
+    assert:
+      - type: contains
+        value: "takumi checkout"
+      - type: contains
+        value: "not git clone"
+
+  # ─── Completeness ──────────────────────────────────────────────────
+  - description: "operator: never use raw build commands rule"
+    vars:
+      skill_name: operator-no-raw
+    providers: [operator]
+    assert:
+      - type: contains
+        value: "Never build/test with raw language commands"
+      - type: contains
+        value: "dependency order and caching"

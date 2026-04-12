@@ -651,12 +651,13 @@ func TestE2E_VibeCoder(t *testing.T) {
 	chdir(t, dir)
 	tr.setRoot(dir)
 
-	// ── Step 2: Agent tries status before setup ────────────────────────
-	tr.stepHeader("Agent tries takumi status before setup — no workspace yet")
+	// ── Step 2: Agent tries status before setup — gets discovery message ─
+	tr.stepHeader("Agent tries takumi status before setup — gets discovery guidance")
 	t.Run("no_workspace_yet", func(t *testing.T) {
 		text, isErr := tcall(t, tr, "takumi_status", nil)
-		assert.True(t, isErr, "should fail — no workspace exists yet")
-		_ = text
+		assert.False(t, isErr, "status returns discovery message, not an error")
+		assert.Contains(t, text, "not a Takumi workspace")
+		assert.Contains(t, text, "takumi init")
 	})
 
 	// ── Step 3: Agent sets up workspace from scratch ───────────────────

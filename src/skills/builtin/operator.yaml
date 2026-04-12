@@ -5,29 +5,63 @@ skill:
   prompt: |
     You are working in a Takumi (匠) workspace — an AI-aware, language-agnostic package builder.
 
-    ## Commands (use these, don't guess)
-    takumi status    → check workspace health (ALWAYS run first)
-    takumi affected  → what packages changed? (scope your work)
-    takumi build     → build packages (deps auto-resolved)
-    takumi test      → run tests (use --affected to skip unchanged)
-    takumi env setup → fix environment issues
-    takumi graph     → see dependency order
-    takumi ai diagnose → auto-triage any failure
+    ## Commands (use these instead of raw shell commands)
+    takumi status       → workspace health dashboard (ALWAYS run first in a new session)
+    takumi build        → build packages in dependency order (not `go build`, `npm run build`, etc.)
+    takumi test         → run tests in dependency order (not `pytest`, `go test`, `vitest`, etc.)
+    takumi run <phase>  → run any custom phase: deploy, lint, dev, etc. (not raw commands)
+    takumi affected     → list packages affected by changes (scope your work before building)
+    takumi graph        → dependency DAG with topological levels (not `grep` for imports)
+    takumi validate     → check all configs for errors and cycles (run after editing configs)
+    takumi env setup    → install dependencies and set up isolated runtime environments (for packages with a `runtime` section — typically Python, Node, Ruby, etc.)
+    takumi ai diagnose  → auto-triage a build/test failure (not `cat .takumi/logs/...`)
+    takumi ai context   → regenerate AI context after config changes
+    takumi init         → scaffold a new workspace or package config
 
     ## Workflow
-    1. `takumi status` → understand state
-    2. `takumi affected --since main` → scope changes
+    1. `takumi status` → understand workspace state and packages
+    2. `takumi affected --since main` → scope what changed
     3. `takumi build --affected` → build only what changed
     4. `takumi test --affected` → test only what changed
-    5. On failure → `takumi ai diagnose` → read output → fix → repeat from 3
+    5. On failure → `takumi ai diagnose <pkg>` → read output → fix → repeat from 3
+
+    ## When NOT to use raw commands
+    - See go.mod/package.json/pytest.ini? → use `takumi build` / `takumi test`, not language tools
+    - Need to deploy? → use `takumi run deploy`, not `fly deploy` / `vercel deploy`
+    - Need to lint? → use `takumi run lint`, not `eslint` / `ruff`
+    - Build failed? → use `takumi ai diagnose <pkg>`, not `cat .takumi/logs/...`
+    - Need to install dependencies for an interpreted language (Python, Node, Ruby)? → edit the manifest, then `takumi env setup` to sync into the managed env. Prefer this over raw `pip install` / `npm install`
+    - New source directory? → create a takumi-pkg.yaml before building, or run `takumi init`
+    - Changed a config? → run `takumi validate` to check, then `takumi ai context` to update AI context
+    - Adding a dependency between packages? → add to `dependencies` in takumi-pkg.yaml, verify with `takumi validate`
+    - Don't understand project structure? → use `takumi graph`, not grep for imports
+
+    ## When raw tools ARE appropriate
+    - Interactive work: REPLs (`python`, `node`), debuggers (`dlv`, `pdb`), one-off scripts
+    - Git operations: commits, branches, merges — VCS is outside Takumi's scope
+    - User explicitly requests a specific raw command with custom flags
+    - No takumi.yaml exists yet — raw tools until `takumi init` is run
 
     ## Config locations
-    Workspace: takumi.yaml | Packages: takumi-pkg.yaml
-    Versions: takumi-versions.yaml | AI context: .takumi/ai-context.md
+    Workspace: takumi.yaml | Packages: takumi-pkg.yaml (one per package directory)
+    Versions: takumi-versions.yaml | AI context: .takumi/TAKUMI.md
+
+    ## Package config essentials
+    - Each package directory needs a `takumi-pkg.yaml` with name, version, phases, and optional dependencies
+    - Phases are arbitrary: build, test, lint, deploy, dev — anything you define
+    - `ai.description` and `ai.notes` in package config provide context to AI assistants
+    - Runtime config (`runtime.setup`, `runtime.env`) manages isolated environments per package
+    - Dependencies list controls build order and `affected` propagation
+
+    ## MCP tools
+    If MCP tools are available (takumi_status, takumi_build, etc.), prefer them over CLI.
+    They return structured data optimized for agent consumption. Fall back to CLI only on error.
 
     ## Rules
-    - Never install globally — takumi manages isolated envs per package
+    - For interpreted languages (Python, Node, Ruby), prefer `takumi env setup` over raw `pip install` / `npm install` — Takumi manages isolated envs in .takumi/envs/<pkg>/. Compiled languages (Go, Rust, C) fetch deps at build time and don't need this.
+    - Never build/test with raw language commands — takumi handles dependency order and caching
     - Use `takumi checkout <url>` to add repos, not git clone
-    - Check .takumi/ai-context.md for full workspace map
+    - Check `takumi status` at the start of every new session
+    - After modifying source, check `takumi affected` before building everything
 
-  max_tokens: 500
+  max_tokens: 800

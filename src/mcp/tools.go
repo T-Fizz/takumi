@@ -78,7 +78,16 @@ var graphTool = gomcp.NewTool("takumi_graph",
 func handleStatus(ctx context.Context, request gomcp.CallToolRequest) (*gomcp.CallToolResult, error) {
 	ws, err := loadWorkspace()
 	if err != nil {
-		return gomcp.NewToolResultError(err.Error()), nil
+		// Outside a workspace — return a discovery message instead of a raw error.
+		// This helps agents that have Takumi registered globally discover and init.
+		return gomcp.NewToolResultText(
+			"Takumi is available but this directory is not a Takumi workspace.\n\n" +
+				"To set up Takumi here, run: takumi init\n" +
+				"This will create takumi.yaml, a package config, and AI agent integration.\n\n" +
+				"Takumi manages builds, tests, and custom phases (deploy, lint, dev) across\n" +
+				"multi-package workspaces with dependency-aware execution and caching.\n\n" +
+				"After init, use takumi_status to see the workspace dashboard.",
+		), nil
 	}
 
 	var b strings.Builder

@@ -182,7 +182,11 @@ func TestHandleStatus_NoWorkspace(t *testing.T) {
 
 	result, err := handleStatus(context.Background(), makeRequest(nil))
 	require.NoError(t, err)
-	assert.True(t, result.IsError)
+	// Outside a workspace, status returns a discovery message (not an error)
+	assert.False(t, result.IsError)
+	text := result.Content[0].(gomcp.TextContent).Text
+	assert.Contains(t, text, "takumi init")
+	assert.Contains(t, text, "not a Takumi workspace")
 }
 
 // ---------------------------------------------------------------------------

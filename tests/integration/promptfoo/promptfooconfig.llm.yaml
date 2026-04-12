@@ -200,3 +200,293 @@ tests:
           4. Know what environment variables will be set
           5. Predict the full build behavior without actually running it
           This should be a complete, parseable execution manifest.
+
+  # ═══════════════════════════════════════════════════════════════════
+  # Scenario-Based Agent Decision Tests
+  #
+  # Each test presents a real scenario and evaluates whether the
+  # operator prompt would lead an AI agent to the correct Takumi
+  # workflow instead of a raw alternative.
+  # ═══════════════════════════════════════════════════════════════════
+
+  # ─── Build & Test scenarios ─────────────────────────────────────────
+  - description: "scenario: agent sees go.mod → operator steers to takumi build"
+    vars:
+      skill_name: operator
+    providers: [operator]
+    assert:
+      - type: llm-rubric
+        value: |
+          An AI agent is working in a workspace that contains Go projects with
+          go.mod files. The agent needs to compile the code. Given ONLY the
+          instructions in this operator prompt, would the agent:
+          (a) Run `go build ./...` directly, OR
+          (b) Run `takumi build`
+
+          The correct answer is (b). The prompt must EXPLICITLY tell the agent
+          to use takumi build instead of go build. Vague hints don't count —
+          there must be a clear instruction that says "not go build" or equivalent.
+          PASS only if the prompt unambiguously steers toward takumi build.
+
+  - description: "scenario: agent sees package.json → operator steers to takumi build"
+    vars:
+      skill_name: operator
+    providers: [operator]
+    assert:
+      - type: llm-rubric
+        value: |
+          An AI agent is in a JavaScript project with package.json. It needs to
+          build the frontend. Given ONLY this operator prompt, would the agent:
+          (a) Run `npm run build` directly, OR
+          (b) Run `takumi build`
+
+          The correct answer is (b). PASS only if the prompt explicitly mentions
+          that npm run build should NOT be used and takumi build should be used
+          instead. The instruction must be clear enough that even an agent with
+          strong npm habits would choose takumi.
+
+  - description: "scenario: agent sees pytest.ini → operator steers to takumi test"
+    vars:
+      skill_name: operator
+    providers: [operator]
+    assert:
+      - type: llm-rubric
+        value: |
+          An AI agent is in a Python project with pytest.ini. It needs to run
+          tests. Given ONLY this operator prompt, would the agent:
+          (a) Run `pytest` directly, OR
+          (b) Run `takumi test`
+
+          The correct answer is (b). PASS only if the prompt explicitly tells
+          the agent not to use pytest/go test/vitest directly and to use
+          takumi test instead.
+
+  - description: "scenario: agent wants to deploy → operator steers to takumi run deploy"
+    vars:
+      skill_name: operator
+    providers: [operator]
+    assert:
+      - type: llm-rubric
+        value: |
+          An AI agent needs to deploy the application. The workspace has deploy
+          phases configured. Given ONLY this operator prompt, would the agent:
+          (a) Run `fly deploy` or `vercel deploy` directly, OR
+          (b) Run `takumi run deploy`
+
+          The correct answer is (b). PASS only if the prompt explicitly mentions
+          `takumi run deploy` or `takumi run <phase>` as the way to deploy, and
+          explicitly says not to use fly deploy / vercel deploy directly.
+
+  # ─── Setup & Scaffolding scenarios ──────────────────────────────────
+  - description: "scenario: new directory without config → operator steers to init"
+    vars:
+      skill_name: operator
+    providers: [operator]
+    assert:
+      - type: llm-rubric
+        value: |
+          An AI agent discovers a new source directory that doesn't have a
+          takumi-pkg.yaml file. It wants to build the code in that directory.
+          Given ONLY this operator prompt, would the agent:
+          (a) Run build commands directly on the source files, OR
+          (b) Create a takumi-pkg.yaml first, or run `takumi init`
+
+          The correct answer is (b). PASS only if the prompt tells the agent
+          that new directories need a takumi-pkg.yaml before building, or that
+          `takumi init` should be used for scaffolding.
+
+  - description: "scenario: adding package dependency → operator steers to config + validate"
+    vars:
+      skill_name: operator
+    providers: [operator]
+    assert:
+      - type: llm-rubric
+        value: |
+          An AI agent is adding a dependency between two packages in the workspace.
+          Given ONLY this operator prompt, would the agent:
+          (a) Just import/require the other package in code, OR
+          (b) Add the dependency to the `dependencies` list in takumi-pkg.yaml
+              and verify with `takumi validate`
+
+          The correct answer is (b). PASS only if the prompt tells the agent to
+          add dependencies to the config file and run validate afterward.
+
+  # ─── Failure & Recovery scenarios ───────────────────────────────────
+  - description: "scenario: build fails → operator steers to diagnose not logs"
+    vars:
+      skill_name: operator
+    providers: [operator]
+    assert:
+      - type: llm-rubric
+        value: |
+          An AI agent just ran `takumi build` and it failed. The agent needs to
+          understand what went wrong. Given ONLY this operator prompt, would the agent:
+          (a) Read log files directly with `cat .takumi/logs/pkg.build.log`, OR
+          (b) Run `takumi ai diagnose <pkg>`
+
+          The correct answer is (b). PASS only if the prompt explicitly tells
+          the agent to use diagnose and explicitly says NOT to cat/read logs
+          directly. The instruction must be clear enough to override the agent's
+          natural instinct to read log files.
+
+  - description: "scenario: config seems wrong → operator steers to validate"
+    vars:
+      skill_name: operator
+    providers: [operator]
+    assert:
+      - type: llm-rubric
+        value: |
+          An AI agent suspects a configuration error (maybe a dependency cycle
+          or invalid YAML). Given ONLY this operator prompt, would the agent:
+          (a) Manually inspect YAML files and trace dependencies, OR
+          (b) Run `takumi validate` to check for errors and cycles
+
+          The correct answer is (b). PASS only if the prompt mentions validate
+          as the way to check for config errors and cycle detection.
+
+  # ─── Change Management scenarios ────────────────────────────────────
+  - description: "scenario: source modified → operator steers to affected before build"
+    vars:
+      skill_name: operator
+    providers: [operator]
+    assert:
+      - type: llm-rubric
+        value: |
+          An AI agent has just modified source code in one package. It needs to
+          rebuild. Given ONLY this operator prompt, would the agent:
+          (a) Run `takumi build` to rebuild everything, OR
+          (b) Run `takumi affected` first to understand blast radius, then
+              `takumi build --affected` to build only what changed
+
+          The correct answer is (b). PASS only if the prompt provides a clear
+          workflow that includes checking affected before building, and uses
+          the --affected flag. The agent should understand the concept of
+          scoped builds.
+
+  - description: "scenario: feature complete → operator gives correct ship workflow"
+    vars:
+      skill_name: operator
+    providers: [operator]
+    assert:
+      - type: llm-rubric
+        value: |
+          An AI agent has finished implementing a feature across multiple packages.
+          Given ONLY this operator prompt, could the agent follow the numbered
+          workflow to verify everything works? The workflow should include:
+          1. Checking status
+          2. Checking what's affected
+          3. Building affected packages
+          4. Testing affected packages
+          5. Handling failures via diagnose
+
+          PASS if the prompt contains a numbered, sequential workflow that covers
+          all these steps. The workflow must be concrete enough to follow without
+          interpretation.
+
+  # ─── Context & Onboarding scenarios ─────────────────────────────────
+  - description: "scenario: new session → operator tells agent to status first"
+    vars:
+      skill_name: operator
+    providers: [operator]
+    assert:
+      - type: llm-rubric
+        value: |
+          An AI agent just started a new session in this workspace. It has no
+          prior context. Given ONLY this operator prompt, would the agent:
+          (a) Start reading source files to understand the project, OR
+          (b) Run `takumi status` as its very first action
+
+          The correct answer is (b). PASS only if the prompt makes it absolutely
+          clear that `takumi status` should be the FIRST thing run in any new
+          session. Words like "ALWAYS run first" or equivalent must be present.
+
+  - description: "scenario: agent confused about structure → operator steers to graph"
+    vars:
+      skill_name: operator
+    providers: [operator]
+    assert:
+      - type: llm-rubric
+        value: |
+          An AI agent doesn't understand how packages in the workspace relate
+          to each other. Given ONLY this operator prompt, would the agent:
+          (a) Grep through import statements and require() calls, OR
+          (b) Run `takumi graph` to see the dependency DAG
+
+          The correct answer is (b). PASS only if the prompt explicitly mentions
+          that graph should be used instead of grepping for imports.
+
+  # ─── Environment scenarios ──────────────────────────────────────────
+  - description: "scenario: agent wants to pip install → operator steers to runtime config"
+    vars:
+      skill_name: operator
+    providers: [operator]
+    assert:
+      - type: llm-rubric
+        value: |
+          An AI agent is working on a Python package and wants to install a new
+          dependency. Given ONLY this operator prompt, would the agent:
+          (a) Run `pip install requests` directly, OR
+          (b) Add the dependency to `runtime.setup` in takumi-pkg.yaml and run
+              `takumi env setup`
+
+          The correct answer is (b). PASS only if the prompt explicitly tells the
+          agent not to pip install / npm install directly and to use the runtime
+          config instead. This must override strong default behavior.
+
+  - description: "scenario: agent wants to npm install → operator steers to runtime config"
+    vars:
+      skill_name: operator
+    providers: [operator]
+    assert:
+      - type: llm-rubric
+        value: |
+          An AI agent is working on a JavaScript package and wants to install
+          dependencies. Given ONLY this operator prompt, would the agent:
+          (a) Run `npm install` directly, OR
+          (b) Add to `runtime.setup` in takumi-pkg.yaml and run `takumi env setup`
+
+          The correct answer is (b). PASS only if the prompt explicitly tells the
+          agent not to install directly and to use the runtime config.
+
+  # ─── MCP scenarios ─────────────────────────────────────────────────
+  - description: "scenario: MCP available → operator steers to MCP tools over CLI"
+    vars:
+      skill_name: operator
+    providers: [operator]
+    assert:
+      - type: llm-rubric
+        value: |
+          An AI agent has MCP tools available (takumi_status, takumi_build, etc.)
+          and also has shell access to run CLI commands. Given ONLY this operator
+          prompt, would the agent:
+          (a) Shell out to `takumi build` via subprocess, OR
+          (b) Use the MCP tool `takumi_build` directly
+
+          The correct answer is (b). PASS only if the prompt explicitly tells
+          agents to prefer MCP tools over CLI when available, and mentions
+          falling back to CLI only on error.
+
+  # ─── Overall completeness ──────────────────────────────────────────
+  - description: "operator: complete operating manual in minimal tokens"
+    vars:
+      skill_name: operator
+    providers: [operator]
+    assert:
+      - type: llm-rubric
+        value: |
+          Evaluate this operator prompt as a COMPLETE operating manual for an
+          AI agent working in a Takumi workspace. A perfect operator prompt
+          should cover ALL of the following scenarios without the agent needing
+          any other documentation:
+          1. Starting a new session (what to run first)
+          2. Building and testing (which commands, not raw tools)
+          3. Custom phases (deploy, lint, dev)
+          4. Handling failures (diagnose, not log reading)
+          5. Understanding structure (graph, not grep)
+          6. Managing dependencies between packages (config, validate)
+          7. Environment management (env setup, not direct install)
+          8. Change management (affected, scoped builds)
+          9. MCP tool preference
+          10. Scaffolding new packages (init, config creation)
+          PASS only if the prompt covers at least 8 of these 10 scenarios
+          with specific, actionable instructions. Vague coverage doesn't count.
