@@ -1,0 +1,9 @@
+workspace:
+  name: takumi
+  ignore:
+    - build/
+    - dist/
+    - coverage/
+    - testdata/
+    - .takumi/
+    - node_modules/

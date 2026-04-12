@@ -1,0 +1,24 @@
+package:
+  name: takumi
+  version: 0.1.2
+ai:
+  description: AI-aware, language-agnostic package builder CLI tool
+phases:
+  build:
+    commands:
+      - go build -o build/takumi ./cmd/takumi
+      - ln -sf takumi build/t
+  test:
+    commands:
+      - go test ./...
+  lint:
+    commands:
+      - go vet ./...
+  release:
+    pre:
+      - test -n "$VERSION" || { echo "Usage: VERSION=x.y.z t run release"; exit 1; }
+      - echo "Releasing v${VERSION}..."
+    commands:
+      - scripts/release.sh
+    post:
+      - echo "Released v${VERSION}"
