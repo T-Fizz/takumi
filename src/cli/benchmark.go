@@ -17,10 +17,17 @@ import (
 
 var benchPublish bool
 var benchModel string
+var benchNote string
 
 func init() {
 	benchmarkCmd.Flags().BoolVar(&benchPublish, "publish", false, "publish results to a GitHub Gist dashboard")
 	benchmarkCmd.Flags().StringVar(&benchModel, "model", "", "override the LLM model (default: claude-haiku-4-5-20251001)")
+
+	benchmarkIterateCmd.Flags().BoolVar(&benchPublish, "publish", false, "publish results to a GitHub Gist dashboard")
+	benchmarkIterateCmd.Flags().StringVar(&benchModel, "model", "", "override the LLM model (default: claude-haiku-4-5-20251001)")
+	benchmarkIterateCmd.Flags().StringVar(&benchNote, "note", "", "annotation for this run (e.g. 'improved README')")
+
+	benchmarkCmd.AddCommand(benchmarkIterateCmd)
 	rootCmd.AddCommand(benchmarkCmd)
 }
 
@@ -32,7 +39,10 @@ token usage, tool calls, turns, errors, and wall-clock time. Optionally publish
 results to a shareable GitHub Gist dashboard.
 
 Available scenarios: fix-build-error, scoped-rebuild, understand-structure
-If no scenarios specified, all are run.`,
+If no scenarios specified, all are run.
+
+Subcommands:
+  iterate    Run iterative setup benchmark and track improvements over time`,
 	RunE: runBenchmark,
 }
 
@@ -436,6 +446,293 @@ func fmtBool(b bool) string {
 		return "yes"
 	}
 	return "no"
+}
+
+// ---------------------------------------------------------------------------
+// benchmark iterate — iterative setup benchmark
+// ---------------------------------------------------------------------------
+
+var benchmarkIterateCmd = &cobra.Command{
+	Use:   "iterate",
+	Short: "Run iterative setup benchmark and track improvements over time",
+	Long: `Tests how efficiently an AI agent can set up a freshly-cloned Takumi project.
+Run after improving README, operator skill, or TAKUMI.md, then compare metrics
+across iterations. Results are appended to history.json for trend tracking.`,
+	RunE: runBenchmarkIterate,
+}
+
+// iterateResult mirrors the JSON from the iterative benchmark.py
+type iterateResult struct {
+	Current iterateRun   `json:"current"`
+	History []iterateRun `json:"history"`
+}
+
+type iterateRun struct {
+	RunID          string            `json:"run_id"`
+	Timestamp      string            `json:"timestamp"`
+	Model          string            `json:"model"`
+	TakumiVersion  string            `json:"takumi_version"`
+	Note           string            `json:"note"`
+	Tokens         iterateTokens     `json:"tokens"`
+	Turns          int               `json:"turns"`
+	ToolCalls      int               `json:"tool_calls"`
+	Errors         int               `json:"errors"`
+	WallTimeS      float64           `json:"wall_time_s"`
+	TaskCompleted  bool              `json:"task_completed"`
+	Verification   map[string]bool   `json:"verification"`
+}
+
+type iterateTokens struct {
+	Input  int `json:"input"`
+	Output int `json:"output"`
+	Total  int `json:"total"`
+}
+
+func runBenchmarkIterate(cmd *cobra.Command, args []string) error {
+	loadDotEnv()
+
+	self, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("cannot find executable path: %w", err)
+	}
+	selfDir := filepath.Dir(self)
+
+	scriptPath := findIterateBenchmarkScript(selfDir)
+	if scriptPath == "" {
+		return fmt.Errorf("iterative benchmark script not found. Run from the Takumi repo or set BENCH_ITERATE_SCRIPT")
+	}
+
+	python := findPython()
+	if python == "" {
+		return fmt.Errorf("python3 with anthropic package not found. Run: pip install anthropic")
+	}
+
+	if os.Getenv("ANTHROPIC_API_KEY") == "" {
+		return fmt.Errorf("ANTHROPIC_API_KEY not set. Add it to .env or export it")
+	}
+
+	pyArgs := []string{scriptPath}
+	if benchNote != "" {
+		pyArgs = append(pyArgs, "--note", benchNote)
+	}
+
+	env := os.Environ()
+	env = append(env, "TAKUMI_BIN="+self)
+	if benchModel != "" {
+		env = append(env, "BENCH_MODEL="+benchModel)
+	}
+
+	c := exec.Command(python, pyArgs...)
+	c.Env = env
+	c.Stdout = os.Stdout
+	c.Stderr = os.Stderr
+	c.Stdin = os.Stdin
+
+	if err := c.Run(); err != nil {
+		return fmt.Errorf("benchmark failed: %w", err)
+	}
+
+	if !benchPublish {
+		return nil
+	}
+
+	// ── Publish ─────────────────────────────────────────────────────
+	fmt.Println()
+	fmt.Println(ui.SectionHeader.Render("Publishing results"))
+
+	resultsPath := filepath.Join(filepath.Dir(scriptPath), "results.json")
+	data, err := os.ReadFile(resultsPath)
+	if err != nil {
+		return fmt.Errorf("cannot read results: %w", err)
+	}
+
+	var results iterateResult
+	if err := json.Unmarshal(data, &results); err != nil {
+		return fmt.Errorf("cannot parse results: %w", err)
+	}
+
+	// Collect transcript log
+	logsDir := filepath.Join(filepath.Dir(scriptPath), "logs")
+	logContent := ""
+	logFile := filepath.Join(logsDir, results.Current.RunID+".log")
+	if b, err := os.ReadFile(logFile); err == nil {
+		logContent = string(b)
+	}
+
+	report := generateIterateReport(results, logContent)
+
+	tmpFile, err := os.CreateTemp("", "takumi-iterate-*.md")
+	if err != nil {
+		return fmt.Errorf("cannot create temp file: %w", err)
+	}
+	defer os.Remove(tmpFile.Name())
+
+	if _, err := tmpFile.WriteString(report); err != nil {
+		return fmt.Errorf("writing report: %w", err)
+	}
+	tmpFile.Close()
+
+	ghArgs := []string{
+		"gist", "create", tmpFile.Name(),
+		"--desc", fmt.Sprintf("Takumi Iterative Benchmark — Run #%d — %s", len(results.History), results.Current.Timestamp),
+		"--public",
+	}
+
+	ghCmd := exec.Command("gh", ghArgs...)
+	ghOut, err := ghCmd.CombinedOutput()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, ui.Cross("Failed to create Gist. Is `gh` installed and authenticated?"))
+		fmt.Fprintln(os.Stderr, string(ghOut))
+
+		localPath := filepath.Join(filepath.Dir(scriptPath), "report.md")
+		os.WriteFile(localPath, []byte(report), 0644)
+		fmt.Println(ui.StepInfo("Report saved locally: " + localPath))
+		return nil
+	}
+
+	gistURL := strings.TrimSpace(string(ghOut))
+	fmt.Println(ui.StepDone("Published: " + gistURL))
+	return nil
+}
+
+func generateIterateReport(results iterateResult, logContent string) string {
+	var sb strings.Builder
+	c := results.Current
+
+	sb.WriteString("# Takumi Iterative Setup Benchmark\n\n")
+	sb.WriteString(fmt.Sprintf("> Run #%d — %s\n\n", len(results.History), c.Timestamp))
+
+	if c.Note != "" {
+		sb.WriteString(fmt.Sprintf("> **Note:** %s\n\n", c.Note))
+	}
+
+	// Config
+	sb.WriteString("## Configuration\n\n")
+	sb.WriteString("| Setting | Value |\n|---------|-------|\n")
+	sb.WriteString(fmt.Sprintf("| Model | `%s` |\n", c.Model))
+	sb.WriteString(fmt.Sprintf("| Takumi version | `%s` |\n", c.TakumiVersion))
+	sb.WriteString("\n")
+
+	// Current run
+	status := "PASS"
+	if !c.TaskCompleted {
+		status = "INCOMPLETE"
+	} else if !c.Verification["build"] || !c.Verification["test"] {
+		status = "PARTIAL"
+	}
+
+	sb.WriteString("## Current Run\n\n")
+	sb.WriteString("| Metric | Value |\n|--------|-------|\n")
+	sb.WriteString(fmt.Sprintf("| Tokens | %s (in: %s, out: %s) |\n", fmtInt(c.Tokens.Total), fmtInt(c.Tokens.Input), fmtInt(c.Tokens.Output)))
+	sb.WriteString(fmt.Sprintf("| Turns | %d |\n", c.Turns))
+	sb.WriteString(fmt.Sprintf("| Tool calls | %d |\n", c.ToolCalls))
+	sb.WriteString(fmt.Sprintf("| Errors | %d |\n", c.Errors))
+	sb.WriteString(fmt.Sprintf("| Time | %.1fs |\n", c.WallTimeS))
+	sb.WriteString(fmt.Sprintf("| Status | **%s** |\n", status))
+	sb.WriteString("\n")
+
+	// History table
+	if len(results.History) > 1 {
+		sb.WriteString("## History\n\n")
+		sb.WriteString("| Run | Date | Tokens | Turns | Calls | Errors | Time | Status | Note |\n")
+		sb.WriteString("|-----|------|--------|-------|-------|--------|------|--------|------|\n")
+
+		for i, h := range results.History {
+			s := "PASS"
+			if !h.TaskCompleted {
+				s = "INCOMPLETE"
+			} else if !h.Verification["build"] || !h.Verification["test"] {
+				s = "PARTIAL"
+			}
+			marker := ""
+			if i == len(results.History)-1 {
+				marker = " **"
+			}
+			markerEnd := ""
+			if marker != "" {
+				markerEnd = "**"
+			}
+			note := h.Note
+			if len(note) > 30 {
+				note = note[:27] + "..."
+			}
+			sb.WriteString(fmt.Sprintf("| %s#%d%s | %s | %s | %d | %d | %d | %.1fs | %s | %s |\n",
+				marker, i+1, markerEnd, h.Timestamp[:10], fmtInt(h.Tokens.Total),
+				h.Turns, h.ToolCalls, h.Errors, h.WallTimeS, s, note))
+		}
+		sb.WriteString("\n")
+
+		// Trend
+		first := results.History[0]
+		latest := results.History[len(results.History)-1]
+
+		sb.WriteString("## Trend\n\n")
+		sb.WriteString(fmt.Sprintf("| Metric | Run #1 | Latest | Change |\n"))
+		sb.WriteString("|--------|--------|--------|--------|\n")
+
+		writeTrendRow := func(label string, old, new int) {
+			pct := ""
+			if old > 0 {
+				p := float64(new-old) / float64(old) * 100
+				pct = fmt.Sprintf("%+.1f%%", p)
+			}
+			sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s |\n", label, fmtInt(old), fmtInt(new), pct))
+		}
+
+		writeTrendRow("Tokens", first.Tokens.Total, latest.Tokens.Total)
+		writeTrendRow("Turns", first.Turns, latest.Turns)
+		writeTrendRow("Tool calls", first.ToolCalls, latest.ToolCalls)
+		writeTrendRow("Errors", first.Errors, latest.Errors)
+
+		if first.WallTimeS > 0 {
+			timePct := (latest.WallTimeS - first.WallTimeS) / first.WallTimeS * 100
+			sb.WriteString(fmt.Sprintf("| Time | %.1fs | %.1fs | %+.1f%% |\n", first.WallTimeS, latest.WallTimeS, timePct))
+		}
+		sb.WriteString("\n")
+	}
+
+	// Transcript
+	if logContent != "" {
+		sb.WriteString("<details>\n<summary>Full transcript</summary>\n\n")
+		sb.WriteString("```\n")
+		sb.WriteString(logContent)
+		sb.WriteString("```\n\n")
+		sb.WriteString("</details>\n\n")
+	}
+
+	sb.WriteString("---\n\n")
+	sb.WriteString("*Generated by `takumi benchmark iterate --publish`*\n")
+
+	return sb.String()
+}
+
+func findIterateBenchmarkScript(binaryDir string) string {
+	if p := os.Getenv("BENCH_ITERATE_SCRIPT"); p != "" {
+		return p
+	}
+
+	candidates := []string{
+		filepath.Join(binaryDir, "..", "tests", "benchmark", "iterative", "benchmark.py"),
+		filepath.Join(binaryDir, "..", "..", "tests", "benchmark", "iterative", "benchmark.py"),
+	}
+
+	cwd, _ := os.Getwd()
+	if cwd != "" {
+		candidates = append(candidates,
+			filepath.Join(cwd, "tests", "benchmark", "iterative", "benchmark.py"),
+		)
+	}
+
+	for _, p := range candidates {
+		abs, err := filepath.Abs(p)
+		if err != nil {
+			continue
+		}
+		if _, err := os.Stat(abs); err == nil {
+			return abs
+		}
+	}
+	return ""
 }
 
 func findBenchmarkScript(binaryDir string) string {

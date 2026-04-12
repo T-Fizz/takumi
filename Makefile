@@ -9,7 +9,7 @@ MODULE := github.com/tfitz/takumi
 BUILD_DIR := build
 COVER_DIR := coverage
 
-.PHONY: build test lint install cover cover-html integration-test integration-test-llm benchmark benchmark-llm benchmark-perf test-all clean
+.PHONY: build test lint install cover cover-html integration-test integration-test-llm benchmark benchmark-llm benchmark-perf benchmark-iterate test-all clean
 
 build:
 	go build -o $(BUILD_DIR)/$(BINARY) ./cmd/takumi
@@ -65,6 +65,11 @@ benchmark-perf: build
 	@test -n "$$ANTHROPIC_API_KEY" || { echo "Error: ANTHROPIC_API_KEY not set."; exit 1; }
 	@$(PYTHON) -c "import anthropic" 2>/dev/null || { echo "Error: anthropic package not found. Run: pip install anthropic"; exit 1; }
 	TAKUMI_BIN=$(BUILD_DIR)/$(BINARY) $(PYTHON) tests/benchmark/perf/benchmark.py $(ARGS)
+
+benchmark-iterate: build
+	@test -n "$$ANTHROPIC_API_KEY" || { echo "Error: ANTHROPIC_API_KEY not set."; exit 1; }
+	@$(PYTHON) -c "import anthropic" 2>/dev/null || { echo "Error: anthropic package not found. Run: pip install anthropic"; exit 1; }
+	TAKUMI_BIN=$(BUILD_DIR)/$(BINARY) $(PYTHON) tests/benchmark/iterative/benchmark.py $(ARGS)
 
 test-all: test integration-test
 

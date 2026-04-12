@@ -22,6 +22,9 @@ add-package.log
 promptfoo-results.*
 tests/benchmark/perf/results.json
 tests/benchmark/perf/logs/
+tests/benchmark/iterative/results.json
+tests/benchmark/iterative/history.json
+tests/benchmark/iterative/logs/
 
 # Environment / secrets
 .env
