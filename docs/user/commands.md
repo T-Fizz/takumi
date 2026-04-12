@@ -188,6 +188,50 @@ Install a git pre-commit hook that auto-regenerates docs.
 
 Remove the pre-commit hook.
 
+## Benchmarking
+
+### `takumi benchmark [scenarios...]`
+
+Run performance benchmarks comparing agent work with and without Takumi. Measures token usage, tool calls, turns, errors, and wall-clock time.
+
+```bash
+takumi benchmark                         # Run all scenarios
+takumi benchmark fix-build-error         # Run specific scenario
+takumi benchmark --publish               # Publish results to GitHub Gist
+takumi benchmark --model claude-sonnet-4-5-20241022
+```
+
+**Available scenarios:**
+
+| Scenario | Description |
+|----------|-------------|
+| `fix-build-error` | Find and fix a type error in a Go HTTP handler |
+| `scoped-rebuild` | After changing shared lib, build only affected packages |
+| `understand-structure` | Explain dependency graph and build order of a 4-package monorepo |
+
+**Flags:**
+- `--publish` — generate a markdown report and publish to a GitHub Gist
+- `--model <model>` — override the LLM model (default: `claude-haiku-4-5-20251001`)
+
+Requires `ANTHROPIC_API_KEY` set in environment or `.env` file.
+
+### `takumi benchmark iterate`
+
+Run an iterative setup benchmark that tests how efficiently an agent can onboard to a freshly-cloned project. Results are appended to `history.json` for tracking improvements over time.
+
+```bash
+takumi benchmark iterate                 # Run and append to history
+takumi benchmark iterate --note "improved README"
+takumi benchmark iterate --publish       # Publish trend report to Gist
+```
+
+**Flags:**
+- `--note <text>` — annotate this run (e.g. what changed since last run)
+- `--publish` — publish trend report with full history to GitHub Gist
+- `--model <model>` — override the LLM model
+
+Each run creates a transcript log in `tests/benchmark/iterative/logs/` and appends metrics to `history.json`. The dashboard shows the current run and a trend comparison against the first run.
+
 ## MCP Server
 
 ### `takumi mcp serve`
@@ -237,6 +281,16 @@ Or if Takumi is installed (recommended — avoids `go run` startup time on every
 ```
 
 The `go run` variant is suitable for development only; use the installed binary for regular use.
+
+### `takumi mcp install`
+
+Register Takumi as a global MCP server so its tools are available in every project — even before running `takumi init`.
+
+```bash
+takumi mcp install
+```
+
+Currently supports Claude Code. Writes to `~/.claude/claude_desktop_config.json`. If the current directory is not a Takumi workspace, `takumi_status` will guide the agent to run `takumi init`.
 
 ## Initialization
 

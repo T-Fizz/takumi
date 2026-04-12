@@ -40,6 +40,7 @@ Unchanged packages are automatically skipped via content-addressed caching.
 - **AI skills** — prompt templates for Claude, Cursor, Copilot, Windsurf, and Cline
 - **Source tracking** — clone and sync external git repositories into the workspace
 - **Version pinning** — centralized dependency version sets with configurable strategies
+- **Performance benchmarks** — measure agent token/turn efficiency with and without Takumi, track improvements over iterations
 
 ## Concepts
 

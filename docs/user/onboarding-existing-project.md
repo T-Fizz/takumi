@@ -185,7 +185,9 @@ This clones the repo, scans it for `takumi-pkg.yaml` files, and registers it in 
 
 ## 9. (Optional) MCP Server for Claude Code
 
-If you use Claude Code, add a `.mcp.json` file to your project root so the agent can operate Takumi directly:
+If you use Claude Code, you have two options:
+
+**Per-project:** add a `.mcp.json` file to your project root:
 
 ```json
 {
@@ -198,4 +200,12 @@ If you use Claude Code, add a `.mcp.json` file to your project root so the agent
 }
 ```
 
-This lets Claude Code call `takumi_build`, `takumi_test`, `takumi_diagnose`, and other tools without copy-pasting prompts. See [AI Skills](ai-skills.md#mcp-server-integration) for details.
+**Global:** register Takumi once for all projects:
+
+```bash
+takumi mcp install
+```
+
+This writes to `~/.claude/claude_desktop_config.json` so Takumi tools are available everywhere — even in projects that haven't run `takumi init` yet.
+
+Either way, Claude Code can call `takumi_build`, `takumi_test`, `takumi_diagnose`, and other tools directly. See [AI Skills](ai-skills.md#mcp-server-integration) for details.
