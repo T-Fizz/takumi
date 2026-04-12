@@ -1,0 +1,88 @@
+name: Publish Wiki
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  wiki:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Publish docs to wiki
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          git clone "https://x-access-token:${GITHUB_TOKEN}@github.com/T-Fizz/takumi.wiki.git" wiki_tmp
+          cd wiki_tmp
+          git rm -rf . 2>/dev/null || true
+
+          # Copy and rename docs: kebab-case.md -> Title-Case.md
+          for f in ../docs/user/*.md ../docs/dev/*.md; do
+            basename_no_ext=$(basename "$f" .md)
+            wiki_name=$(echo "$basename_no_ext" | sed 's/-/ /g' | awk '{for(i=1;i<=NF;i++) $i=toupper(substr($i,1,1)) substr($i,2)}1' | sed 's/ /-/g')
+
+            # Copy file, rewrite internal markdown links for wiki
+            sed -E \
+              -e 's/\[([^]]+)\]\(([a-z-]+)\.md\)/[\1](\2)/g' \
+              -e 's/\[([^]]+)\]\(\.\.\/\.\.\/LICENSE\)/[\1](https:\/\/github.com\/T-Fizz\/takumi\/blob\/main\/LICENSE)/g' \
+              -e 's/\[([^]]+)\]\(\.\.\/dev\/([a-z-]+)\.md\)/[\1](\2)/g' \
+              -e 's/\[([^]]+)\]\(\.\.\/user\/([a-z-]+)\.md\)/[\1](\2)/g' \
+              "$f" > "${wiki_name}.md"
+          done
+
+          # Landing page
+          cat > Home.md << 'EOF'
+          # Takumi
+
+          An AI-native workspace orchestrator that gives agents the build context,
+          dependency awareness, and diagnostic tools they need to operate on
+          polyglot projects correctly.
+
+          ## User Guides
+
+          - [[Getting Started]]
+          - [[Onboarding Existing Project]]
+          - [[Commands]]
+          - [[Configuration]]
+          - [[AI Skills]]
+
+          ## Developer Docs
+
+          - [[Architecture]]
+          - [[Packages]]
+          - [[Testing]]
+          - [[Contributing]]
+          EOF
+
+          # Sidebar navigation
+          cat > _Sidebar.md << 'EOF'
+          **User Guides**
+          - [[Getting Started]]
+          - [[Onboarding Existing Project]]
+          - [[Commands]]
+          - [[Configuration]]
+          - [[AI Skills]]
+
+          **Developer Docs**
+          - [[Architecture]]
+          - [[Packages]]
+          - [[Testing]]
+          - [[Contributing]]
+          EOF
+
+          git add -A
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git diff --cached --quiet && echo "No changes to wiki" && exit 0
+          git commit -m "Sync docs from main"
+          git push

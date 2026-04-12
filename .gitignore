@@ -1,5 +1,6 @@
 # Build artifacts
 build/
+dist/
 coverage/
 
 # Takumi workspace state
