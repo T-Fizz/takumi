@@ -20,6 +20,11 @@ recovery.log
 multi-session.log
 add-package.log
 promptfoo-results.*
+tests/benchmark/perf/results.json
+tests/benchmark/perf/logs/
+
+# Environment / secrets
+.env
 
 # AI agent context files
 CLAUDE.md

@@ -1,9 +1,15 @@
+# Load .env if present (API keys, etc.)
+ifneq (,$(wildcard .env))
+include .env
+export
+endif
+
 BINARY := takumi
 MODULE := github.com/tfitz/takumi
 BUILD_DIR := build
 COVER_DIR := coverage
 
-.PHONY: build test lint install cover cover-html integration-test integration-test-llm benchmark benchmark-llm test-all clean
+.PHONY: build test lint install cover cover-html integration-test integration-test-llm benchmark benchmark-llm benchmark-perf test-all clean
 
 build:
 	go build -o $(BUILD_DIR)/$(BINARY) ./cmd/takumi
@@ -52,6 +58,13 @@ benchmark-llm: build
 	@command -v npx >/dev/null 2>&1 || { echo "Error: npx not found. Install Node.js 18+."; exit 1; }
 	@test -n "$$ANTHROPIC_API_KEY" || { echo "Error: ANTHROPIC_API_KEY not set."; exit 1; }
 	cd tests/benchmark && TAKUMI_BIN=../../$(BUILD_DIR)/$(BINARY) npx --yes promptfoo@latest eval -c promptfooconfig.llm.yaml --no-cache
+
+PYTHON := $(shell python3 -c "import anthropic" 2>/dev/null && echo python3 || echo python3.12)
+
+benchmark-perf: build
+	@test -n "$$ANTHROPIC_API_KEY" || { echo "Error: ANTHROPIC_API_KEY not set."; exit 1; }
+	@$(PYTHON) -c "import anthropic" 2>/dev/null || { echo "Error: anthropic package not found. Run: pip install anthropic"; exit 1; }
+	TAKUMI_BIN=$(BUILD_DIR)/$(BINARY) $(PYTHON) tests/benchmark/perf/benchmark.py $(ARGS)
 
 test-all: test integration-test
 
