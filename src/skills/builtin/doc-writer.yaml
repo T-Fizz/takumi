@@ -1,0 +1,30 @@
+skill:
+  name: doc-writer
+  description: "Generate/update user-facing documentation from code and config"
+
+  auto_context:
+    - command_tree
+    - config_schemas
+    - recent_commits
+    - existing_docs
+
+  prompt: |
+    You are updating documentation for Takumi, an AI-aware package builder.
+
+    Current command tree:
+    {{command_tree}}
+
+    Config schemas:
+    {{config_schemas}}
+
+    Recent changes:
+    {{recent_commits}}
+
+    Existing docs:
+    {{existing_docs}}
+
+    Update the getting-started guide and add usage examples for any
+    commands or config fields that are missing examples. Keep it concise.
+    Write for developers who have never seen takumi before.
+
+  max_tokens: 2000

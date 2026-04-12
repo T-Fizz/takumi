@@ -1,0 +1,206 @@
+# Takumi Runbook Benchmarks — Deterministic Tests
+#
+# Runs each scenario (new project, onboard Go, onboard Python) and checks that
+# every step succeeded. These tests validate that the user-facing documentation
+# produces working results when followed literally.
+#
+# Usage:
+#   cd tests/benchmark
+#   TAKUMI_BIN=../../build/takumi npx --yes promptfoo@latest eval --no-cache
+#
+# Or from repo root:
+#   make benchmark
+
+description: "Takumi Runbook Benchmarks — Deterministic"
+
+providers:
+  - id: exec:bash run-scenario.sh new-project
+    label: new-project
+    config:
+      timeoutMs: 300000
+
+  - id: exec:bash run-scenario.sh onboard-golang
+    label: onboard-golang
+    config:
+      timeoutMs: 300000
+
+  - id: exec:bash run-scenario.sh onboard-python
+    label: onboard-python
+    config:
+      timeoutMs: 300000
+
+prompts:
+  - "{{scenario}}"
+
+tests:
+  # ─── New Project (getting-started.md) ───────────────────────────────────────
+
+  - description: "new-project: all steps pass"
+    vars:
+      scenario: new-project
+    providers: [new-project]
+    assert:
+      - type: contains
+        value: "ALL PASSED"
+
+  - description: "new-project: workspace initialized"
+    vars:
+      scenario: new-project
+    providers: [new-project]
+    assert:
+      - type: contains
+        value: "found: takumi.yaml"
+      - type: contains
+        value: "found: takumi-pkg.yaml"
+      - type: contains
+        value: "found: .takumi/"
+
+  - description: "new-project: validate succeeds"
+    vars:
+      scenario: new-project
+    providers: [new-project]
+    assert:
+      - type: contains
+        value: "STEP 6: Validate"
+      - type: regex
+        value: "STEP 6.*[\\s\\S]*PASS"
+
+  - description: "new-project: build produces binary"
+    vars:
+      scenario: new-project
+    providers: [new-project]
+    assert:
+      - type: contains
+        value: "STEP 10: Verify build"
+      - type: contains
+        value: "build/my-project"
+
+  - description: "new-project: caching works on rebuild"
+    vars:
+      scenario: new-project
+    providers: [new-project]
+    assert:
+      - type: contains
+        value: "STEP 13: Rebuild"
+      - type: regex
+        value: "(cached|PASS)"
+
+  # ─── Onboard Go Monorepo (onboarding-existing-project.md) ──────────────────
+
+  - description: "onboard-golang: all steps pass"
+    vars:
+      scenario: onboard-golang
+    providers: [onboard-golang]
+    assert:
+      - type: contains
+        value: "ALL PASSED"
+
+  - description: "onboard-golang: 3 packages discovered"
+    vars:
+      scenario: onboard-golang
+    providers: [onboard-golang]
+    assert:
+      - type: contains
+        value: "internal"
+      - type: contains
+        value: "samplecmd"
+      - type: contains
+        value: "samplesvc"
+
+  - description: "onboard-golang: dependency graph has correct structure"
+    vars:
+      scenario: onboard-golang
+    providers: [onboard-golang]
+    assert:
+      - type: contains
+        value: "Level 0"
+      - type: regex
+        value: "3 packages"
+
+  - description: "onboard-golang: builds produce binaries"
+    vars:
+      scenario: onboard-golang
+    providers: [onboard-golang]
+    assert:
+      - type: contains
+        value: "found: build/samplecmd"
+      - type: contains
+        value: "found: build/samplesvc"
+
+  - description: "onboard-golang: caching works on rebuild"
+    vars:
+      scenario: onboard-golang
+    providers: [onboard-golang]
+    assert:
+      - type: contains
+        value: "STEP 16: Rebuild"
+      - type: regex
+        value: "(cached|PASS)"
+
+  # ─── Onboard Python Monorepo (onboarding-existing-project.md) ──────────────
+
+  - description: "onboard-python: all steps pass"
+    vars:
+      scenario: onboard-python
+    providers: [onboard-python]
+    assert:
+      - type: contains
+        value: "ALL PASSED"
+
+  - description: "onboard-python: 3 packages discovered"
+    vars:
+      scenario: onboard-python
+    providers: [onboard-python]
+    assert:
+      - type: contains
+        value: "greeter"
+      - type: contains
+        value: "mycli"
+      - type: contains
+        value: "server"
+
+  - description: "onboard-python: dependency graph shows server depends on greeter"
+    vars:
+      scenario: onboard-python
+    providers: [onboard-python]
+    assert:
+      - type: contains
+        value: "Level 0"
+      - type: regex
+        value: "server.*greeter|greeter.*server"
+
+  - description: "onboard-python: build and test succeed"
+    vars:
+      scenario: onboard-python
+    providers: [onboard-python]
+    assert:
+      - type: contains
+        value: "STEP 12: Build"
+      - type: contains
+        value: "STEP 13: Run tests"
+      - type: regex
+        value: "syntax OK|py_compile|PASS"
+
+  - description: "onboard-python: caching works on rebuild"
+    vars:
+      scenario: onboard-python
+    providers: [onboard-python]
+    assert:
+      - type: contains
+        value: "STEP 15: Rebuild"
+      - type: regex
+        value: "(cached|PASS)"
+
+  # ─── Cross-scenario: documentation is language-agnostic ─────────────────────
+
+  - description: "both onboard scenarios produce valid workspace status"
+    vars:
+      scenario: onboard-golang
+    providers: [onboard-golang, onboard-python]
+    assert:
+      - type: contains
+        value: "STEP"
+      - type: contains
+        value: "status"
+      - type: regex
+        value: "Passed: \\d+"

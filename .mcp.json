@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "takumi": {
+      "command": "go",
+      "args": ["run", "./cmd/takumi", "mcp", "serve"]
+    }
+  }
+}

@@ -1,0 +1,27 @@
+skill:
+  name: onboard
+  description: "Generate a complete workspace briefing for new devs or fresh AI sessions"
+
+  auto_context:
+    - workspace_config
+    - all_package_configs
+    - dependency_graph
+    - version_set
+    - ai_instructions
+
+  prompt: |
+    Generate a workspace briefing for someone who has never seen this project.
+
+    Workspace: {{workspace_config}}
+    Packages: {{all_package_configs}}
+    Graph: {{dependency_graph}}
+    Versions: {{version_set}}
+
+    Cover:
+    1. What this project is (from ai.context.description)
+    2. Package map — what each package does, in dependency order
+    3. How to get started: clone, env setup, build, test
+    4. Key conventions and gotchas (from ai.notes)
+    5. Common tasks (from ai.tasks across all packages)
+
+  max_tokens: 1200
