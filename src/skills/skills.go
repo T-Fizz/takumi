@@ -4,6 +4,7 @@ package skills
 import (
 	"embed"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -47,9 +48,14 @@ type LoadedSkill struct {
 
 // LoadBuiltins returns all built-in skills embedded in the binary.
 func LoadBuiltins() ([]LoadedSkill, error) {
-	entries, err := builtinFS.ReadDir("builtin")
+	return loadFromFS(builtinFS, "builtin", SourceBuiltin)
+}
+
+// loadFromFS loads skill definitions from a filesystem directory.
+func loadFromFS(fsys fs.FS, dir string, source Source) ([]LoadedSkill, error) {
+	entries, err := fs.ReadDir(fsys, dir)
 	if err != nil {
-		return nil, fmt.Errorf("reading embedded skills: %w", err)
+		return nil, fmt.Errorf("reading skills from %s: %w", dir, err)
 	}
 
 	var skills []LoadedSkill
@@ -58,19 +64,19 @@ func LoadBuiltins() ([]LoadedSkill, error) {
 			continue
 		}
 
-		data, err := builtinFS.ReadFile("builtin/" + entry.Name())
+		data, err := fs.ReadFile(fsys, dir+"/"+entry.Name())
 		if err != nil {
-			return nil, fmt.Errorf("reading embedded skill %s: %w", entry.Name(), err)
+			return nil, fmt.Errorf("reading skill %s: %w", entry.Name(), err)
 		}
 
 		var sf SkillFile
 		if err := yaml.Unmarshal(data, &sf); err != nil {
-			return nil, fmt.Errorf("parsing embedded skill %s: %w", entry.Name(), err)
+			return nil, fmt.Errorf("parsing skill %s: %w", entry.Name(), err)
 		}
 
 		skills = append(skills, LoadedSkill{
 			Skill:  sf.Skill,
-			Source: SourceBuiltin,
+			Source: source,
 		})
 	}
 	return skills, nil

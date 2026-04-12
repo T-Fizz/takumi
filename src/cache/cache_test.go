@@ -201,6 +201,70 @@ func TestHashFile_NotFound(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestStore_Write_MkdirFails(t *testing.T) {
+	// Place a regular file where the cache directory would be created
+	root := t.TempDir()
+	blocker := filepath.Join(root, ".takumi")
+	os.WriteFile(blocker, []byte("I am a file, not a dir"), 0644)
+
+	store := NewStore(root)
+	entry := &Entry{Key: "abc", Package: "p", Phase: "build"}
+	err := store.Write(entry)
+	assert.Error(t, err, "Write should fail when MkdirAll cannot create cache dir")
+}
+
+func TestComputeKey_NonexistentPkgDir(t *testing.T) {
+	// When pkgDir doesn't exist, hashDirectory returns 0 files (no error).
+	// ComputeKey should still succeed with a valid key and 0 file count.
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "takumi-pkg.yaml")
+	os.WriteFile(cfgPath, []byte("package:\n  name: x\n  version: 0.1.0\n"), 0644)
+
+	key, count, err := ComputeKey(filepath.Join(dir, "nonexistent"), cfgPath, "build", nil, nil)
+	require.NoError(t, err)
+	assert.NotEmpty(t, key, "should produce a key even with empty source dir")
+	assert.Equal(t, 0, count, "nonexistent dir should yield 0 files")
+}
+
+func TestHashDirectory_SkipsUnhashableFiles(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "readable.go"), []byte("package main"), 0644)
+
+	// Create a file that can't be read (hashFile will fail on it)
+	unreadable := filepath.Join(dir, "secret.go")
+	os.WriteFile(unreadable, []byte("package main"), 0000)
+	t.Cleanup(func() { os.Chmod(unreadable, 0644) })
+
+	var buf strings.Builder
+	n, err := hashDirectory(&buf, dir, nil)
+	require.NoError(t, err)
+	assert.Equal(t, 1, n, "only the readable file should be hashed")
+	assert.Contains(t, buf.String(), "file:readable.go:")
+	assert.NotContains(t, buf.String(), "secret.go")
+}
+
+func TestHashDirectory_WalkCallbackError(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "good.go"), []byte("package main"), 0644)
+
+	// Create inaccessible subdirectory — Walk calls callback with err != nil
+	badDir := filepath.Join(dir, "noperm")
+	os.Mkdir(badDir, 0000)
+	t.Cleanup(func() { os.Chmod(badDir, 0755) })
+
+	var buf strings.Builder
+	n, err := hashDirectory(&buf, dir, nil)
+	require.NoError(t, err)
+	assert.Equal(t, 1, n, "should hash only the accessible file")
+}
+
+func TestHashFile_DirectoryFails(t *testing.T) {
+	// os.Open succeeds on directories, but io.Copy fails (can't read a dir FD)
+	dir := t.TempDir()
+	_, err := hashFile(dir)
+	assert.Error(t, err, "hashFile on a directory should fail during io.Copy")
+}
+
 func TestHashDirectory_SkipsTakumiDir(t *testing.T) {
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "src.go"), []byte("package main"), 0644)

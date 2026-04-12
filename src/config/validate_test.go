@@ -193,6 +193,35 @@ func TestValidateVersionSet_EmptyPackages(t *testing.T) {
 	assert.True(t, hasWarning, "should warn about empty packages")
 }
 
+func TestValidateVersionSet_EmptyStrategy(t *testing.T) {
+	// No strategy set — the strategy check should be skipped entirely
+	cfg := &VersionSetConfig{
+		VersionSet: VersionSet{
+			Name:     "release",
+			Packages: map[string]string{"react": "18.0.0"},
+		},
+	}
+	findings := ValidateVersionSet(cfg)
+	assert.Empty(t, findings, "no findings when strategy is empty and config is otherwise valid")
+}
+
+func TestValidateVersionSet_EmptyName(t *testing.T) {
+	cfg := &VersionSetConfig{
+		VersionSet: VersionSet{
+			Strategy: "strict",
+			Packages: map[string]string{"a": "1.0.0"},
+		},
+	}
+	findings := ValidateVersionSet(cfg)
+	hasNameWarning := false
+	for _, f := range findings {
+		if f.Field == "version-set.name" {
+			hasNameWarning = true
+		}
+	}
+	assert.True(t, hasNameWarning, "should warn about empty name")
+}
+
 func TestFinding_String(t *testing.T) {
 	f := Finding{Severity: SeverityError, Field: "workspace.name", Message: "must not be empty"}
 	assert.Equal(t, "error: workspace.name — must not be empty", f.String())

@@ -36,6 +36,7 @@ type RunOptions struct {
 	Packages []string // specific packages (nil = all)
 	Parallel bool     // run levels in parallel
 	NoCache  bool     // skip cache lookup and force execution
+	Quiet    bool     // suppress terminal output (log files still written)
 }
 
 // Run executes a phase across workspace packages in dependency order.
@@ -111,7 +112,7 @@ func runCached(ws *workspace.Info, pkgName string, opts RunOptions, store *cache
 
 	// Skip cache for packages that don't define this phase
 	if pkg.Config.Phases[opts.Phase] == nil {
-		return runPhase(ws, pkgName, opts.Phase)
+		return runPhase(ws, pkgName, opts)
 	}
 
 	// Build dependency keys from earlier levels (already populated)
@@ -126,7 +127,7 @@ func runCached(ws *workspace.Info, pkgName string, opts RunOptions, store *cache
 	key, fileCount, err := cache.ComputeKey(pkg.Dir, configPath, opts.Phase, depKeys, ws.Config.Workspace.Ignore)
 	if err != nil {
 		// Can't compute key — run without caching
-		return runPhase(ws, pkgName, opts.Phase)
+		return runPhase(ws, pkgName, opts)
 	}
 	cacheKeys[pkgName] = key
 
@@ -142,7 +143,7 @@ func runCached(ws *workspace.Info, pkgName string, opts RunOptions, store *cache
 	}
 
 	// Cache miss — run the phase
-	result := runPhase(ws, pkgName, opts.Phase)
+	result := runPhase(ws, pkgName, opts)
 
 	// On success, write cache entry
 	if result.Error == nil && result.ExitCode == 0 {
@@ -210,7 +211,7 @@ func runCachedLocal(ws *workspace.Info, pkgName string, opts RunOptions, store *
 	pkg := ws.Packages[pkgName]
 
 	if pkg.Config.Phases[opts.Phase] == nil {
-		return runPhase(ws, pkgName, opts.Phase)
+		return runPhase(ws, pkgName, opts)
 	}
 
 	depKeys := make(map[string]string)
@@ -223,7 +224,7 @@ func runCachedLocal(ws *workspace.Info, pkgName string, opts RunOptions, store *
 	configPath := filepath.Join(pkg.Dir, workspace.PackageFile)
 	key, fileCount, err := cache.ComputeKey(pkg.Dir, configPath, opts.Phase, depKeys, ws.Config.Workspace.Ignore)
 	if err != nil {
-		return runPhase(ws, pkgName, opts.Phase)
+		return runPhase(ws, pkgName, opts)
 	}
 	localKeys[pkgName] = key
 
@@ -237,7 +238,7 @@ func runCachedLocal(ws *workspace.Info, pkgName string, opts RunOptions, store *
 		}
 	}
 
-	result := runPhase(ws, pkgName, opts.Phase)
+	result := runPhase(ws, pkgName, opts)
 
 	if result.Error == nil && result.ExitCode == 0 {
 		store.Write(&cache.Entry{
@@ -254,8 +255,9 @@ func runCachedLocal(ws *workspace.Info, pkgName string, opts RunOptions, store *
 }
 
 // runPhase executes all commands for a single phase of a single package.
-func runPhase(ws *workspace.Info, pkgName, phase string) Result {
+func runPhase(ws *workspace.Info, pkgName string, opts RunOptions) Result {
 	pkg := ws.Packages[pkgName]
+	phase := opts.Phase
 	start := time.Now()
 
 	result := Result{
@@ -314,8 +316,14 @@ func runPhase(ws *workspace.Info, pkgName, phase string) Result {
 
 		// Tee stdout/stderr to both log file and prefixed terminal output
 		prefix := ui.Muted.Render(fmt.Sprintf("[%s] ", pkgName))
-		cmd.Stdout = io.MultiWriter(logFile, &prefixWriter{prefix: prefix, w: os.Stdout})
-		cmd.Stderr = io.MultiWriter(logFile, &prefixWriter{prefix: prefix, w: os.Stderr})
+		termOut := io.Writer(os.Stdout)
+		termErr := io.Writer(os.Stderr)
+		if opts.Quiet {
+			termOut = io.Discard
+			termErr = io.Discard
+		}
+		cmd.Stdout = io.MultiWriter(logFile, &prefixWriter{prefix: prefix, w: termOut})
+		cmd.Stderr = io.MultiWriter(logFile, &prefixWriter{prefix: prefix, w: termErr})
 
 		if err := cmd.Run(); err != nil {
 			result.ExitCode = cmd.ProcessState.ExitCode()

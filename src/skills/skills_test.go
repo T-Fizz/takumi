@@ -1,9 +1,11 @@
 package skills
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
+	"testing/fstest"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -205,6 +207,81 @@ func TestLoadFromDir_WithAutoContext(t *testing.T) {
 	require.Len(t, skills, 1)
 	assert.Equal(t, []string{"git_diff", "package_config"}, skills[0].AutoContext)
 	assert.Equal(t, 500, skills[0].MaxTokens)
+}
+
+// --- loadFromFS tests (covers embedded FS error paths) ---
+
+func TestLoadFromFS_SkipsDirEntry(t *testing.T) {
+	fsys := fstest.MapFS{
+		"skills/subdir":     {Mode: fs.ModeDir},
+		"skills/valid.yaml": {Data: []byte("skill:\n  name: test\n  description: d\n  prompt: p\n")},
+	}
+	skills, err := loadFromFS(fsys, "skills", SourceBuiltin)
+	require.NoError(t, err)
+	require.Len(t, skills, 1)
+	assert.Equal(t, "test", skills[0].Name)
+	assert.Equal(t, SourceBuiltin, skills[0].Source)
+}
+
+func TestLoadFromFS_SkipsNonYAMLFiles(t *testing.T) {
+	fsys := fstest.MapFS{
+		"skills/readme.md":  {Data: []byte("# not a skill")},
+		"skills/valid.yaml": {Data: []byte("skill:\n  name: ok\n  description: d\n  prompt: p\n")},
+	}
+	skills, err := loadFromFS(fsys, "skills", SourceBuiltin)
+	require.NoError(t, err)
+	require.Len(t, skills, 1)
+	assert.Equal(t, "ok", skills[0].Name)
+}
+
+func TestLoadFromFS_ReadDirError(t *testing.T) {
+	fsys := fstest.MapFS{} // no "nonexistent" dir
+	_, err := loadFromFS(fsys, "nonexistent", SourceBuiltin)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "reading skills from nonexistent")
+}
+
+func TestLoadFromFS_InvalidYAML(t *testing.T) {
+	fsys := fstest.MapFS{
+		"skills/bad.yaml": {Data: []byte("{{not valid yaml}}")},
+	}
+	_, err := loadFromFS(fsys, "skills", SourceBuiltin)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "parsing skill bad.yaml")
+}
+
+// readErrFS wraps a MapFS and makes ReadFile fail for a specific file.
+type readErrFS struct {
+	fstest.MapFS
+	errOn string
+}
+
+func (f readErrFS) ReadFile(name string) ([]byte, error) {
+	if name == f.errOn {
+		return nil, fs.ErrPermission
+	}
+	return f.MapFS.ReadFile(name)
+}
+
+func TestLoadFromFS_ReadFileError(t *testing.T) {
+	inner := fstest.MapFS{
+		"skills/broken.yaml": {Data: []byte("skill:\n  name: x\n")},
+	}
+	fsys := readErrFS{MapFS: inner, errOn: "skills/broken.yaml"}
+	_, err := loadFromFS(fsys, "skills", SourceBuiltin)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "reading skill broken.yaml")
+}
+
+func TestLoadFromDir_PermissionDenied(t *testing.T) {
+	// Directory exists but is not readable (non-IsNotExist error)
+	dir := t.TempDir()
+	target := filepath.Join(dir, "unreadable")
+	os.Mkdir(target, 0000)
+	t.Cleanup(func() { os.Chmod(target, 0755) })
+
+	_, err := LoadFromDir(target, SourceWorkspace)
+	assert.Error(t, err, "should return error for unreadable directory")
 }
 
 func TestLoadFromDir_ReadError(t *testing.T) {

@@ -755,6 +755,160 @@ func TestRun_ParallelNoCache(t *testing.T) {
 	}
 }
 
+func TestRun_EmptyLevelSkipped(t *testing.T) {
+	// "base" at level 0, "app" at level 1.
+	// Targeting only "app" means level 0 is empty → skipped.
+	ws := setupTestWorkspace(t, map[string]*config.PackageConfig{
+		"base": {
+			Package: config.PackageMeta{Name: "base", Version: "1.0.0"},
+			Phases: map[string]*config.Phase{
+				"build": {Commands: []string{"echo base"}},
+			},
+		},
+		"app": {
+			Package:      config.PackageMeta{Name: "app", Version: "1.0.0"},
+			Dependencies: []string{"base"},
+			Phases: map[string]*config.Phase{
+				"build": {Commands: []string{"echo app"}},
+			},
+		},
+	})
+
+	results, err := Run(ws, RunOptions{
+		Phase:    "build",
+		Packages: []string{"app"},
+	})
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	assert.Equal(t, "app", results[0].Package)
+	assert.Equal(t, 0, results[0].ExitCode)
+}
+
+func TestRun_ComputeKeyErrorFallback(t *testing.T) {
+	// Remove config file after workspace load so ComputeKey fails.
+	// The phase should still run (without caching).
+	ws := setupTestWorkspace(t, map[string]*config.PackageConfig{
+		"broken": {
+			Package: config.PackageMeta{Name: "broken", Version: "1.0.0"},
+			Phases: map[string]*config.Phase{
+				"build": {Commands: []string{"echo works"}},
+			},
+		},
+	})
+	os.Remove(filepath.Join(ws.Packages["broken"].Dir, workspace.PackageFile))
+
+	results, err := Run(ws, RunOptions{Phase: "build"})
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	assert.Equal(t, 0, results[0].ExitCode)
+	assert.False(t, results[0].CacheHit, "should run uncached when ComputeKey fails")
+}
+
+func TestRun_ParallelComputeKeyError(t *testing.T) {
+	// Same as above but in parallel — exercises runCachedLocal error path.
+	ws := setupTestWorkspace(t, map[string]*config.PackageConfig{
+		"good": {
+			Package: config.PackageMeta{Name: "good", Version: "1.0.0"},
+			Phases: map[string]*config.Phase{
+				"build": {Commands: []string{"echo good"}},
+			},
+		},
+		"broken": {
+			Package: config.PackageMeta{Name: "broken", Version: "1.0.0"},
+			Phases: map[string]*config.Phase{
+				"build": {Commands: []string{"echo broken"}},
+			},
+		},
+	})
+	os.Remove(filepath.Join(ws.Packages["broken"].Dir, workspace.PackageFile))
+
+	results, err := Run(ws, RunOptions{Phase: "build", Parallel: true})
+	require.NoError(t, err)
+	require.Len(t, results, 2)
+	for _, r := range results {
+		assert.Equal(t, 0, r.ExitCode, "%s should succeed", r.Package)
+	}
+}
+
+func TestRun_ParallelWithDepsFromEarlierLevel(t *testing.T) {
+	// base at level 0, app1+app2 at level 1 (parallel).
+	// Exercises the snapshot/depKeys path in runParallelCached.
+	ws := setupTestWorkspace(t, map[string]*config.PackageConfig{
+		"base": {
+			Package: config.PackageMeta{Name: "base", Version: "1.0.0"},
+			Phases: map[string]*config.Phase{
+				"build": {Commands: []string{"echo base"}},
+			},
+		},
+		"app1": {
+			Package:      config.PackageMeta{Name: "app1", Version: "1.0.0"},
+			Dependencies: []string{"base"},
+			Phases: map[string]*config.Phase{
+				"build": {Commands: []string{"echo app1"}},
+			},
+		},
+		"app2": {
+			Package:      config.PackageMeta{Name: "app2", Version: "1.0.0"},
+			Dependencies: []string{"base"},
+			Phases: map[string]*config.Phase{
+				"build": {Commands: []string{"echo app2"}},
+			},
+		},
+	})
+
+	results, err := Run(ws, RunOptions{Phase: "build", Parallel: true})
+	require.NoError(t, err)
+	require.Len(t, results, 3)
+	for _, r := range results {
+		assert.Equal(t, 0, r.ExitCode, "%s should succeed", r.Package)
+	}
+	// base must come first (level 0), app1/app2 at level 1
+	assert.Equal(t, "base", results[0].Package)
+}
+
+// errWriter is an io.Writer that fails after a configured number of bytes.
+type errWriter struct {
+	failAfter int
+	written   int
+}
+
+func (w *errWriter) Write(p []byte) (int, error) {
+	if w.written >= w.failAfter {
+		return 0, fmt.Errorf("write failed")
+	}
+	w.written += len(p)
+	return len(p), nil
+}
+
+func TestPrefixWriter_ErrorOnPrefixWrite(t *testing.T) {
+	w := &errWriter{failAfter: 0}
+	pw := &prefixWriter{prefix: "[p] ", w: w, atBOL: true}
+	_, err := pw.Write([]byte("hello"))
+	assert.Error(t, err, "should propagate error from prefix write")
+}
+
+func TestPrefixWriter_ErrorOnByteWrite(t *testing.T) {
+	w := &errWriter{failAfter: 4} // prefix "[p] " is 4 bytes
+	pw := &prefixWriter{prefix: "[p] ", w: w, atBOL: true}
+	_, err := pw.Write([]byte("hello"))
+	assert.Error(t, err, "should propagate error from byte write")
+}
+
+func TestRecordMetrics_WriteError(t *testing.T) {
+	root := t.TempDir()
+	markerDir := filepath.Join(root, workspace.MarkerDir)
+	os.MkdirAll(markerDir, 0755)
+
+	// Make the marker directory read-only so WriteFile fails
+	os.Chmod(markerDir, 0555)
+	t.Cleanup(func() { os.Chmod(markerDir, 0755) })
+
+	err := RecordMetrics(root, []Result{
+		{Package: "p", Phase: "build", Duration: 100 * time.Millisecond},
+	})
+	assert.Error(t, err, "should fail when metrics file cannot be written")
+}
+
 func TestRun_ParallelFailure(t *testing.T) {
 	pkgA := config.DefaultPackageConfig("a")
 	pkgA.Phases = map[string]*config.Phase{

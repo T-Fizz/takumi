@@ -410,6 +410,13 @@ func TestShouldIgnore_RelativePathPrefixOfDeeper(t *testing.T) {
 	assert.True(t, shouldIgnore("/root", "/root/third_party/vendored/sub", []string{"third_party/vendored"}))
 }
 
+func TestShouldIgnore_RelPathError(t *testing.T) {
+	// filepath.Rel("", "/abs/path") fails because "" cleans to "."
+	// and a relative base can't reach an absolute target → returns false.
+	result := shouldIgnore("", "/absolute/vendor", []string{"vendor"})
+	assert.False(t, result, "should return false when Rel fails")
+}
+
 // --- helpers ---
 
 // setupTestWorkspace creates a temp dir with packages at specified relative paths.
