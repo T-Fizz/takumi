@@ -10,9 +10,13 @@ import (
 	"github.com/tfitz/takumi/src/workspace"
 )
 
+// version is set at build time via ldflags.
+var version = "dev"
+
 var rootCmd = &cobra.Command{
-	Use:   "takumi",
-	Short: "Takumi (匠) — AI-aware, language-agnostic package builder",
+	Use:     "takumi",
+	Version: version,
+	Short:   "Takumi (匠) — AI-aware, language-agnostic package builder",
 	Long: `Takumi is an AI-aware, language-agnostic package builder that works with any
 project in any git repo. It runs user-defined shell commands, manages optional
 per-package runtime environments, builds a dependency DAG for parallel execution,
