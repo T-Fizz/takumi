@@ -124,6 +124,26 @@ Show environment status (ready / not set up) for all packages with runtime confi
 
 Remove environment directories.
 
+## Code Review
+
+### `takumi review`
+
+Run a thorough code review of all workspace changes using Claude. Analyzes uncommitted or branched changes and produces a detailed review document covering bugs, logic errors, style issues, missing tests, security concerns, and nits.
+
+```bash
+takumi review                    # Review uncommitted changes
+takumi review --base main        # Review all changes since main
+takumi review --base HEAD~3      # Review last 3 commits
+takumi review -o review.md       # Write to specific file
+```
+
+**Flags:**
+- `-o`, `--output` — write review to file (default: `.takumi/reviews/<timestamp>.md`)
+- `--model` — LLM model (default: `claude-sonnet-4-5-20250514`)
+- `--base` — base ref for diff (default: `HEAD`)
+
+Requires `ANTHROPIC_API_KEY` in environment or `.env` file.
+
 ## Version Sets
 
 ### `takumi version-set check`
