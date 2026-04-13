@@ -128,21 +128,27 @@ Remove environment directories.
 
 ### `takumi review`
 
-Run a thorough code review of all workspace changes using Claude. Analyzes uncommitted or branched changes and produces a detailed review document covering bugs, logic errors, style issues, missing tests, security concerns, and nits.
+Run a thorough code review of all workspace changes. Analyzes uncommitted or branched changes and produces a detailed review document covering bugs, logic errors, style issues, missing tests, security concerns, and nits.
 
 ```bash
 takumi review                    # Review uncommitted changes
 takumi review --base main        # Review all changes since main
 takumi review --base HEAD~3      # Review last 3 commits
 takumi review -o review.md       # Write to specific file
+takumi review --provider openai  # Use OpenAI instead of Anthropic
 ```
 
 **Flags:**
 - `-o`, `--output` — write review to file (default: `.takumi/reviews/<timestamp>.md`)
-- `--model` — LLM model (default: `claude-sonnet-4-5-20250514`)
+- `--provider` — LLM provider: `anthropic`, `openai` (default: auto-detected from env)
+- `--model` — LLM model (default: auto-detected from provider)
 - `--base` — base ref for diff (default: `HEAD`)
 
-Requires `ANTHROPIC_API_KEY` in environment or `.env` file.
+**Provider setup** — set one of:
+- `ANTHROPIC_API_KEY` — uses Anthropic (Claude models)
+- `OPENAI_API_KEY` — uses OpenAI (GPT models)
+
+The provider is auto-detected from whichever key is set, or can be specified with `--provider`.
 
 ## Version Sets
 

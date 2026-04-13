@@ -20,11 +20,13 @@ import (
 var reviewOutput string
 var reviewModel string
 var reviewBase string
+var reviewProvider string
 
 func init() {
 	reviewCmd.Flags().StringVarP(&reviewOutput, "output", "o", "", "write review to file (default: .takumi/reviews/<timestamp>.md)")
-	reviewCmd.Flags().StringVar(&reviewModel, "model", "claude-sonnet-4-5-20250514", "LLM model to use")
+	reviewCmd.Flags().StringVar(&reviewModel, "model", "", "LLM model (default: auto-detected from provider)")
 	reviewCmd.Flags().StringVar(&reviewBase, "base", "HEAD", "base ref for diff (e.g. main, HEAD~3)")
+	reviewCmd.Flags().StringVar(&reviewProvider, "provider", "", "LLM provider: anthropic, openai (default: auto-detected from env)")
 	rootCmd.AddCommand(reviewCmd)
 }
 
@@ -35,16 +37,75 @@ var reviewCmd = &cobra.Command{
 a detailed code review document. Checks for bugs, logic errors, style issues,
 missing tests, security concerns, and nits. Writes findings to a markdown file.
 
-Requires ANTHROPIC_API_KEY in environment or .env file.`,
+Supports multiple LLM providers. Set one of:
+  ANTHROPIC_API_KEY  — uses Anthropic (Claude models)
+  OPENAI_API_KEY     — uses OpenAI (GPT models)
+
+Or specify explicitly with --provider and --model.`,
 	RunE: runReview,
+}
+
+// llmProvider holds resolved provider config
+type llmProvider struct {
+	Name   string
+	APIKey string
+	Model  string
+}
+
+func detectProvider() (*llmProvider, error) {
+	// Explicit flag takes priority
+	if reviewProvider != "" {
+		switch reviewProvider {
+		case "anthropic":
+			key := os.Getenv("ANTHROPIC_API_KEY")
+			if key == "" {
+				return nil, fmt.Errorf("ANTHROPIC_API_KEY not set")
+			}
+			model := reviewModel
+			if model == "" {
+				model = "claude-sonnet-4-5-20250514"
+			}
+			return &llmProvider{Name: "anthropic", APIKey: key, Model: model}, nil
+		case "openai":
+			key := os.Getenv("OPENAI_API_KEY")
+			if key == "" {
+				return nil, fmt.Errorf("OPENAI_API_KEY not set")
+			}
+			model := reviewModel
+			if model == "" {
+				model = "gpt-4o"
+			}
+			return &llmProvider{Name: "openai", APIKey: key, Model: model}, nil
+		default:
+			return nil, fmt.Errorf("unknown provider %q (supported: anthropic, openai)", reviewProvider)
+		}
+	}
+
+	// Auto-detect from env
+	if key := os.Getenv("ANTHROPIC_API_KEY"); key != "" {
+		model := reviewModel
+		if model == "" {
+			model = "claude-sonnet-4-5-20250514"
+		}
+		return &llmProvider{Name: "anthropic", APIKey: key, Model: model}, nil
+	}
+	if key := os.Getenv("OPENAI_API_KEY"); key != "" {
+		model := reviewModel
+		if model == "" {
+			model = "gpt-4o"
+		}
+		return &llmProvider{Name: "openai", APIKey: key, Model: model}, nil
+	}
+
+	return nil, fmt.Errorf("no LLM API key found. Set ANTHROPIC_API_KEY or OPENAI_API_KEY in env or .env")
 }
 
 func runReview(cmd *cobra.Command, args []string) error {
 	loadDotEnv()
 
-	apiKey := os.Getenv("ANTHROPIC_API_KEY")
-	if apiKey == "" {
-		return fmt.Errorf("ANTHROPIC_API_KEY not set. Add it to .env or export it")
+	provider, err := detectProvider()
+	if err != nil {
+		return err
 	}
 
 	ws := requireWorkspace()
@@ -116,8 +177,8 @@ func runReview(cmd *cobra.Command, args []string) error {
 
 	fmt.Println(ui.StepInfo(fmt.Sprintf("Reviewing %d files across %d packages...", len(changedFiles), len(pkgNames))))
 
-	// Call Anthropic API
-	review, err := callAnthropic(apiKey, reviewModel, prompt)
+	// Call LLM
+	review, err := callLLM(provider, prompt)
 	if err != nil {
 		return fmt.Errorf("review failed: %w", err)
 	}
@@ -135,11 +196,13 @@ func runReview(cmd *cobra.Command, args []string) error {
 	header := fmt.Sprintf("# Code Review\n\n"+
 		"> Generated: %s\n"+
 		"> Base: `%s`\n"+
+		"> Provider: `%s`\n"+
 		"> Model: `%s`\n"+
 		"> Files: %d | Packages: %s\n\n---\n\n",
 		time.Now().Format("2006-01-02 15:04:05"),
 		reviewBase,
-		reviewModel,
+		provider.Name,
+		provider.Model,
 		len(changedFiles),
 		strings.Join(pkgNames, ", "),
 	)
@@ -234,37 +297,28 @@ Be thorough. Flag everything — even minor nits. A clean review says "no issues
 	return sb.String()
 }
 
-// Anthropic Messages API — direct HTTP, no SDK dependency
+// ---------------------------------------------------------------------------
+// LLM provider abstraction — direct HTTP, no SDK dependencies
+// ---------------------------------------------------------------------------
 
-type anthropicRequest struct {
-	Model     string             `json:"model"`
-	MaxTokens int                `json:"max_tokens"`
-	Messages  []anthropicMessage `json:"messages"`
+func callLLM(p *llmProvider, prompt string) (string, error) {
+	switch p.Name {
+	case "anthropic":
+		return callAnthropic(p.APIKey, p.Model, prompt)
+	case "openai":
+		return callOpenAI(p.APIKey, p.Model, prompt)
+	default:
+		return "", fmt.Errorf("unsupported provider: %s", p.Name)
+	}
 }
 
-type anthropicMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
-type anthropicResponse struct {
-	Content []struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
-	} `json:"content"`
-	Error *struct {
-		Type    string `json:"type"`
-		Message string `json:"message"`
-	} `json:"error"`
-}
+// ── Anthropic ──────────────────────────────────────────────────────────
 
 func callAnthropic(apiKey, model, prompt string) (string, error) {
-	reqBody := anthropicRequest{
-		Model:     model,
-		MaxTokens: 8192,
-		Messages: []anthropicMessage{
-			{Role: "user", Content: prompt},
-		},
+	reqBody := map[string]any{
+		"model":      model,
+		"max_tokens": 8192,
+		"messages":   []map[string]string{{"role": "user", "content": prompt}},
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -294,16 +348,25 @@ func callAnthropic(apiKey, model, prompt string) (string, error) {
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("API error %d: %s", resp.StatusCode, string(body))
+		return "", fmt.Errorf("anthropic API error %d: %s", resp.StatusCode, string(body))
 	}
 
-	var apiResp anthropicResponse
+	var apiResp struct {
+		Content []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"content"`
+		Error *struct {
+			Type    string `json:"type"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
 	if err := json.Unmarshal(body, &apiResp); err != nil {
 		return "", fmt.Errorf("parsing response: %w", err)
 	}
 
 	if apiResp.Error != nil {
-		return "", fmt.Errorf("API error: %s: %s", apiResp.Error.Type, apiResp.Error.Message)
+		return "", fmt.Errorf("anthropic error: %s: %s", apiResp.Error.Type, apiResp.Error.Message)
 	}
 
 	var result strings.Builder
@@ -314,6 +377,69 @@ func callAnthropic(apiKey, model, prompt string) (string, error) {
 	}
 
 	return result.String(), nil
+}
+
+// ── OpenAI ─────────────────────────────────────────────────────────────
+
+func callOpenAI(apiKey, model, prompt string) (string, error) {
+	reqBody := map[string]any{
+		"model":      model,
+		"max_tokens": 8192,
+		"messages":   []map[string]string{{"role": "user", "content": prompt}},
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", fmt.Errorf("marshaling request: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", "https://api.openai.com/v1/chat/completions", bytes.NewReader(jsonData))
+	if err != nil {
+		return "", fmt.Errorf("creating request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+
+	client := &http.Client{Timeout: 5 * time.Minute}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("API request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("reading response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("openai API error %d: %s", resp.StatusCode, string(body))
+	}
+
+	var apiResp struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+		Error *struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(body, &apiResp); err != nil {
+		return "", fmt.Errorf("parsing response: %w", err)
+	}
+
+	if apiResp.Error != nil {
+		return "", fmt.Errorf("openai error: %s", apiResp.Error.Message)
+	}
+
+	if len(apiResp.Choices) == 0 {
+		return "", fmt.Errorf("openai returned no choices")
+	}
+
+	return apiResp.Choices[0].Message.Content, nil
 }
 
 func reviewDiff(wsRoot, base string) string {

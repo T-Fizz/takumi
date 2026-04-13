@@ -46,7 +46,7 @@ Unchanged packages are automatically skipped via content-addressed caching.
 - **AI skills** — prompt templates for Claude, Cursor, Copilot, Windsurf, and Cline
 - **Source tracking** — clone and sync external git repositories into the workspace
 - **Version pinning** — centralized dependency version sets with configurable strategies
-- **LLM code review** — `takumi review` runs a thorough code review via Claude, outputs structured markdown
+- **LLM code review** — `takumi review` runs a thorough code review via any supported LLM, outputs structured markdown
 - **Performance benchmarks** — measure agent token/turn efficiency with and without Takumi, track improvements over iterations
 
 ## Concepts
