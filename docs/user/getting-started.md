@@ -9,7 +9,7 @@ go install github.com/tfitz/takumi@latest
 Or build from source:
 
 ```bash
-git clone https://github.com/tfitz/takumi.git
+git clone https://github.com/T-Fizz/takumi.git
 cd takumi
 make build        # → ./build/takumi
 make install      # → $GOPATH/bin/takumi

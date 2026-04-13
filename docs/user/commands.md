@@ -260,19 +260,6 @@ For Claude Code integration, add a `.mcp.json` file to your project root:
 {
   "mcpServers": {
     "takumi": {
-      "command": "go",
-      "args": ["run", "./cmd/takumi", "mcp", "serve"]
-    }
-  }
-}
-```
-
-Or if Takumi is installed (recommended — avoids `go run` startup time on every invocation):
-
-```json
-{
-  "mcpServers": {
-    "takumi": {
       "command": "takumi",
       "args": ["mcp", "serve"]
     }
@@ -280,7 +267,18 @@ Or if Takumi is installed (recommended — avoids `go run` startup time on every
 }
 ```
 
-The `go run` variant is suitable for development only; use the installed binary for regular use.
+For development (building from source), you can use `go run` instead:
+
+```json
+{
+  "mcpServers": {
+    "takumi": {
+      "command": "go",
+      "args": ["run", "./cmd/takumi", "mcp", "serve"]
+    }
+  }
+}
+```
 
 ### `takumi mcp install`
 
