@@ -133,7 +133,7 @@ func runAIDiagnose(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("built-in skill 'diagnose' not found")
 	}
 
-	changedFiles, _ := gitChangedFiles(ws.Root, "HEAD")
+	changedFiles, _ := workspace.ChangedFiles(ws.Root, "HEAD")
 	g := buildGraph(ws)
 	deps := g.DepsOf(pkgName)
 
@@ -163,8 +163,8 @@ func runAIReview(cmd *cobra.Command, args []string) error {
 	}
 
 	diff := gitDiffOutput(ws.Root)
-	changedFiles, _ := gitChangedFiles(ws.Root, "HEAD")
-	affected := mapFilesToPackages(ws, changedFiles)
+	changedFiles, _ := workspace.ChangedFiles(ws.Root, "HEAD")
+	affected := workspace.MapFilesToPackages(ws, changedFiles)
 
 	var names []string
 	for name := range affected {

@@ -73,11 +73,11 @@ func runPhaseCommand(cmd *cobra.Command, args []string, phase string) error {
 	var packages []string
 
 	if affectedFlag {
-		changedFiles, err := gitChangedFiles(ws.Root, "HEAD")
+		changedFiles, err := workspace.ChangedFiles(ws.Root, "HEAD")
 		if err != nil {
 			return fmt.Errorf("determining affected packages: %w", err)
 		}
-		affected := mapFilesToPackages(ws, changedFiles)
+		affected := workspace.MapFilesToPackages(ws, changedFiles)
 		g := buildGraph(ws)
 		allAffected := make(map[string]bool)
 		for pkg := range affected {

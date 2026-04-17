@@ -2,10 +2,7 @@ package cli
 
 import (
 	"fmt"
-	"os/exec"
-	"path/filepath"
 	"sort"
-	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/tfitz/takumi/src/ui"
@@ -34,7 +31,7 @@ func runAffected(cmd *cobra.Command, args []string) error {
 	}
 
 	// Get changed files from git
-	changedFiles, err := gitChangedFiles(ws.Root, since)
+	changedFiles, err := workspace.ChangedFiles(ws.Root, since)
 	if err != nil {
 		return fmt.Errorf("git diff: %w", err)
 	}
@@ -45,7 +42,7 @@ func runAffected(cmd *cobra.Command, args []string) error {
 	}
 
 	// Map changed files to packages
-	directlyAffected := mapFilesToPackages(ws, changedFiles)
+	directlyAffected := workspace.MapFilesToPackages(ws, changedFiles)
 
 	if len(directlyAffected) == 0 {
 		fmt.Println(ui.Check("Changed files don't belong to any tracked package"))
@@ -104,51 +101,4 @@ func runAffected(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 
 	return nil
-}
-
-// gitChangedFiles returns files changed since the given ref.
-func gitChangedFiles(wsRoot, since string) ([]string, error) {
-	// Try diff against ref first (for branch comparisons)
-	cmd := exec.Command("git", "-C", wsRoot, "diff", "--name-only", since)
-	out, err := cmd.Output()
-	if err != nil {
-		// Fall back to diff of working tree
-		cmd = exec.Command("git", "-C", wsRoot, "diff", "--name-only")
-		out, err = cmd.Output()
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-	var files []string
-	for _, line := range lines {
-		if line != "" {
-			files = append(files, line)
-		}
-	}
-	return files, nil
-}
-
-// mapFilesToPackages determines which packages contain the changed files.
-func mapFilesToPackages(ws *workspace.Info, files []string) map[string]bool {
-	affected := make(map[string]bool)
-
-	for _, file := range files {
-		absFile := filepath.Join(ws.Root, file)
-
-		for name, pkg := range ws.Packages {
-			// Check if the changed file is under the package's directory
-			rel, err := filepath.Rel(pkg.Dir, absFile)
-			if err != nil {
-				continue
-			}
-			// If rel doesn't start with "..", the file is inside this package
-			if !strings.HasPrefix(rel, "..") {
-				affected[name] = true
-			}
-		}
-	}
-
-	return affected
 }

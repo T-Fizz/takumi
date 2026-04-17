@@ -850,7 +850,7 @@ func TestMapFilesToPackages_NoMatch(t *testing.T) {
 	ws, err := loadWorkspace()
 	require.NoError(t, err)
 
-	result := mapFilesToPackages(ws, []string{"some/random/file.go"})
+	result := workspace.MapFilesToPackages(ws, []string{"some/random/file.go"})
 	assert.Empty(t, result)
 }
 
@@ -862,7 +862,7 @@ func TestMapFilesToPackages_DirectMatch(t *testing.T) {
 	ws, err := loadWorkspace()
 	require.NoError(t, err)
 
-	result := mapFilesToPackages(ws, []string{"svc-a/main.go"})
+	result := workspace.MapFilesToPackages(ws, []string{"svc-a/main.go"})
 	assert.True(t, result["svc-a"])
 	assert.False(t, result["svc-b"])
 }
@@ -875,7 +875,7 @@ func TestMapFilesToPackages_MultipleMatches(t *testing.T) {
 	ws, err := loadWorkspace()
 	require.NoError(t, err)
 
-	result := mapFilesToPackages(ws, []string{"svc-a/main.go", "svc-b/handler.go"})
+	result := workspace.MapFilesToPackages(ws, []string{"svc-a/main.go", "svc-b/handler.go"})
 	assert.True(t, result["svc-a"])
 	assert.True(t, result["svc-b"])
 }
@@ -888,7 +888,7 @@ func TestMapFilesToPackages_EmptyFiles(t *testing.T) {
 	ws, err := loadWorkspace()
 	require.NoError(t, err)
 
-	result := mapFilesToPackages(ws, nil)
+	result := workspace.MapFilesToPackages(ws, nil)
 	assert.Empty(t, result)
 }
 
@@ -900,7 +900,7 @@ func TestGitChangedFiles_CleanRepo(t *testing.T) {
 	dir := realPath(t, t.TempDir())
 	setupGitWorkspace(t, dir)
 
-	files, err := gitChangedFiles(dir, "HEAD")
+	files, err := workspace.ChangedFiles(dir, "HEAD")
 	require.NoError(t, err)
 	assert.Empty(t, files)
 }
@@ -915,7 +915,7 @@ func TestGitChangedFiles_WithChanges(t *testing.T) {
 	require.NoError(t, os.WriteFile(newFile, []byte("package svc"), 0644))
 	require.NoError(t, exec.Command("git", "-C", dir, "add", newFile).Run())
 
-	files, err := gitChangedFiles(dir, "HEAD")
+	files, err := workspace.ChangedFiles(dir, "HEAD")
 	require.NoError(t, err)
 	assert.NotEmpty(t, files)
 	assert.Contains(t, files, "svc-a/new.go")
@@ -924,7 +924,7 @@ func TestGitChangedFiles_WithChanges(t *testing.T) {
 func TestGitChangedFiles_NotAGitRepo(t *testing.T) {
 	dir := realPath(t, t.TempDir())
 
-	_, err := gitChangedFiles(dir, "HEAD")
+	_, err := workspace.ChangedFiles(dir, "HEAD")
 	assert.Error(t, err)
 }
 
@@ -1525,7 +1525,7 @@ func TestGitChangedFiles_FallbackToWorkingTree(t *testing.T) {
 	setupGitWorkspace(t, dir)
 
 	// Use an invalid ref that will fail and trigger fallback
-	files, err := gitChangedFiles(dir, "nonexistent-ref-xyz")
+	files, err := workspace.ChangedFiles(dir, "nonexistent-ref-xyz")
 	require.NoError(t, err)
 	// Should fall back to working tree diff which is clean
 	assert.Empty(t, files)
@@ -2253,47 +2253,31 @@ func TestPrintDryRun_WithCachedEntry(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// writeCommandDocs — branch coverage
+// genCommandIndex — branch coverage
 // ---------------------------------------------------------------------------
 
-func TestWriteCommandDocs_HiddenCommand(t *testing.T) {
+func TestGenCommandIndex_HiddenCommand(t *testing.T) {
 	var buf strings.Builder
 	cmd := &cobra.Command{Use: "secret", Short: "hidden cmd", Hidden: true}
-	writeCommandDocs(&buf, cmd, "")
+	genCommandIndex(&buf, cmd, "")
 	assert.Empty(t, buf.String(), "hidden command should produce no output")
 }
 
-func TestWriteCommandDocs_WithFlags(t *testing.T) {
+func TestGenCommandIndex_RunnableCommand(t *testing.T) {
 	var buf strings.Builder
 	cmd := &cobra.Command{
 		Use:   "flagged",
 		Short: "does things with flags",
 		RunE:  func(*cobra.Command, []string) error { return nil },
 	}
-	cmd.Flags().String("output", "default.txt", "output path")
-	cmd.Flags().Bool("verbose", false, "enable verbose output")
-	writeCommandDocs(&buf, cmd, "takumi")
+	genCommandIndex(&buf, cmd, "takumi")
 	out := buf.String()
-	assert.Contains(t, out, "## `takumi flagged`")
-	assert.Contains(t, out, "--output")
-	assert.Contains(t, out, "output path")
-	assert.Contains(t, out, "--verbose")
+	assert.Contains(t, out, "`takumi flagged`")
+	assert.Contains(t, out, "does things with flags")
+	assert.Contains(t, out, "commands/takumi_flagged.md")
 }
 
-func TestWriteCommandDocs_WithLongDesc(t *testing.T) {
-	var buf strings.Builder
-	cmd := &cobra.Command{
-		Use:   "detailed",
-		Short: "short desc",
-		Long:  "This is a long detailed description of the command.",
-		RunE:  func(*cobra.Command, []string) error { return nil },
-	}
-	writeCommandDocs(&buf, cmd, "takumi")
-	out := buf.String()
-	assert.Contains(t, out, "This is a long detailed description")
-}
-
-func TestWriteCommandDocs_NonRunnableParent(t *testing.T) {
+func TestGenCommandIndex_NonRunnableParent(t *testing.T) {
 	var buf strings.Builder
 	parent := &cobra.Command{Use: "group", Short: "a group of commands"}
 	child := &cobra.Command{
@@ -2302,24 +2286,35 @@ func TestWriteCommandDocs_NonRunnableParent(t *testing.T) {
 		RunE:  func(*cobra.Command, []string) error { return nil },
 	}
 	parent.AddCommand(child)
-	writeCommandDocs(&buf, parent, "takumi")
+	genCommandIndex(&buf, parent, "takumi")
 	out := buf.String()
 	// Child should appear, parent should not (it's not runnable)
-	assert.Contains(t, out, "## `takumi group action`")
-	assert.NotContains(t, out, "## `takumi group`\n")
+	assert.Contains(t, out, "`takumi group action`")
+	assert.NotContains(t, out, "`takumi group`](")
 }
 
-func TestWriteCommandDocs_NoPrefix(t *testing.T) {
+func TestGenCommandIndex_NoPrefix(t *testing.T) {
 	var buf strings.Builder
 	cmd := &cobra.Command{
 		Use:   "standalone",
 		Short: "a standalone command",
 		RunE:  func(*cobra.Command, []string) error { return nil },
 	}
-	writeCommandDocs(&buf, cmd, "")
+	genCommandIndex(&buf, cmd, "")
 	out := buf.String()
-	assert.Contains(t, out, "## `standalone`")
+	assert.Contains(t, out, "`standalone`")
 	assert.Contains(t, out, "a standalone command")
+}
+
+func TestGenCommandIndex_SkipsHelp(t *testing.T) {
+	var buf strings.Builder
+	cmd := &cobra.Command{
+		Use:   "help",
+		Short: "Help about any command",
+		RunE:  func(*cobra.Command, []string) error { return nil },
+	}
+	genCommandIndex(&buf, cmd, "takumi")
+	assert.Empty(t, buf.String(), "help command should not appear in index")
 }
 
 // ---------------------------------------------------------------------------
@@ -3544,7 +3539,7 @@ func TestMapFilesToPackages_OutsidePackage(t *testing.T) {
 	require.NoError(t, err)
 
 	// File at workspace root, outside any package
-	result := mapFilesToPackages(ws, []string{"takumi.yaml"})
+	result := workspace.MapFilesToPackages(ws, []string{"takumi.yaml"})
 	assert.Empty(t, result)
 }
 
@@ -3556,7 +3551,7 @@ func TestMapFilesToPackages_InsidePackage(t *testing.T) {
 	ws, err := loadWorkspace()
 	require.NoError(t, err)
 
-	result := mapFilesToPackages(ws, []string{"svc-a/main.go"})
+	result := workspace.MapFilesToPackages(ws, []string{"svc-a/main.go"})
 	assert.True(t, result["svc-a"])
 }
 
@@ -3684,12 +3679,12 @@ func TestInitPackageInDir_InRoot(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// writeCommandDocs — more patterns
+// genCommandIndex — more patterns
 // ---------------------------------------------------------------------------
 
-func TestWriteCommandDocs_NestedSubcommands(t *testing.T) {
+func TestGenCommandIndex_NestedSubcommands(t *testing.T) {
 	var buf strings.Builder
-	writeCommandDocs(&buf, rootCmd, "")
+	genCommandIndex(&buf, rootCmd, "")
 	result := buf.String()
 	// Should contain nested commands like "takumi ai context"
 	assert.Contains(t, result, "context")

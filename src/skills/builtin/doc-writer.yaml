@@ -1,15 +1,17 @@
 skill:
   name: doc-writer
-  description: "Generate/update user-facing documentation from code and config"
+  description: "Find and fix missing Go doc comments, skill descriptions, and command annotations in source code"
 
   auto_context:
     - command_tree
     - config_schemas
-    - recent_commits
-    - existing_docs
 
   prompt: |
-    You are updating documentation for Takumi, an AI-aware package builder.
+    You are auditing Takumi source code for missing documentation annotations.
+    The doc generator (`takumi docs generate`) produces all documentation
+    deterministically from source — Go doc comments, Cobra command descriptions,
+    and skill YAML files. Your job is to ensure the source has what the
+    generator needs.
 
     Current command tree:
     {{command_tree}}
@@ -17,14 +19,13 @@ skill:
     Config schemas:
     {{config_schemas}}
 
-    Recent changes:
-    {{recent_commits}}
+    Check for and fix:
+    1. Exported Go functions/types missing doc comments in src/
+    2. Cobra commands with empty or vague Short/Long descriptions
+    3. Skill YAML files with missing or unclear descriptions
+    4. Config struct fields missing comments
 
-    Existing docs:
-    {{existing_docs}}
-
-    Update the getting-started guide and add usage examples for any
-    commands or config fields that are missing examples. Keep it concise.
-    Write for developers who have never seen takumi before.
+    For each fix, add the annotation directly to the source file.
+    Do NOT edit files in docs/ — the generator handles those.
 
   max_tokens: 2000

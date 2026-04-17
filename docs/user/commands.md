@@ -1,337 +1,54 @@
 # Commands Reference
 
-## Building & Testing
-
-### `takumi build [packages...]`
-
-Build packages in dependency order. If no packages specified, builds all.
-
-```bash
-takumi build                     # Build everything
-takumi build api web             # Build specific packages
-takumi build --affected          # Only packages changed since last commit
-takumi build --dry-run           # Show execution plan without running
-takumi build --no-cache          # Force rebuild, ignore cache
-```
-
-**Flags:**
-- `--affected` — only build packages with changed files + downstream dependents
-- `--dry-run` — show what would run, with cache status per package
-- `--no-cache` — skip cache lookup and force execution
-
-### `takumi build clean`
-
-Remove the `build/` directory and clear the build cache.
-
-### `takumi test [packages...]`
-
-Run test phase for packages. Same flags as `build`.
-
-```bash
-takumi test                      # Test everything
-takumi test --affected           # Only changed packages
-takumi test api --no-cache       # Force retest
-```
-
-### `takumi run <phase> [packages...]`
-
-Run any named phase. Use this for custom phases like `lint`, `deploy`, `bundle`.
-
-```bash
-takumi run lint
-takumi run deploy api
-takumi run lint --affected --dry-run
-```
-
-## Workspace Info
-
-### `takumi status`
-
-Full workspace health dashboard: packages, environments, recent builds, AI agent.
-
-### `takumi graph`
-
-Print the dependency graph with parallel level annotations.
-
-```
-Level 0 (no deps)
-  shared-lib
-
-Level 1
-  api ← shared-lib
-  web ← shared-lib
-```
-
-### `takumi affected`
-
-List packages affected by recent file changes, including downstream dependents.
-
-```bash
-takumi affected                  # Changes in working tree
-takumi affected --since main     # Changes since branch point
-takumi affected --since HEAD~3   # Last 3 commits
-```
-
-### `takumi validate`
-
-Check all configuration files for errors:
-
-1. Structural validation of `takumi.yaml`, all `takumi-pkg.yaml` files, and `takumi-versions.yaml`
-2. Cross-validation: unresolved dependency references
-3. Cycle detection in the dependency graph
-
-## Source Tracking
-
-### `takumi checkout <url>`
-
-Clone a git repository and register it as a tracked source in `takumi.yaml`.
-
-```bash
-takumi checkout git@github.com:org/repo.git
-takumi checkout git@github.com:org/repo.git --branch dev
-takumi checkout git@github.com:org/repo.git --path ./libs/repo
-```
-
-### `takumi sync`
-
-Pull updates for all tracked sources. Clones any that are missing.
-
-### `takumi remove <package>`
-
-Unregister a tracked source from `takumi.yaml` and clean up its runtime environment.
-
-```bash
-takumi remove shared-lib             # Unregister only
-takumi remove shared-lib --delete    # Also delete from disk
-```
-
-## Runtime Environments
-
-### `takumi env setup [packages...]`
-
-Run `runtime.setup` commands for packages that define a `runtime` section. Creates isolated environments in `.takumi/envs/<package>/`.
-
-```bash
-takumi env setup                 # All packages with runtime
-takumi env setup api             # Specific package
-```
-
-### `takumi env list`
-
-Show environment status (ready / not set up) for all packages with runtime config.
-
-### `takumi env clean [packages...]`
-
-Remove environment directories.
-
-## Code Review
-
-### `takumi review`
-
-Run a thorough code review of all workspace changes. Analyzes uncommitted or branched changes and produces a detailed review document covering bugs, logic errors, style issues, missing tests, security concerns, and nits.
-
-```bash
-takumi review                    # Review uncommitted changes
-takumi review --base main        # Review all changes since main
-takumi review --base HEAD~3      # Review last 3 commits
-takumi review -o review.md       # Write to specific file
-takumi review --provider openai  # Use OpenAI instead of Anthropic
-```
-
-**Flags:**
-- `-o`, `--output` — write review to file (default: `.takumi/reviews/<timestamp>.md`)
-- `--provider` — LLM provider: `anthropic`, `openai` (default: auto-detected from env)
-- `--model` — LLM model (default: auto-detected from provider)
-- `--base` — base ref for diff (default: `HEAD`)
-
-**Provider setup** — set one of:
-- `ANTHROPIC_API_KEY` — uses Anthropic (Claude models)
-- `OPENAI_API_KEY` — uses OpenAI (GPT models)
-
-The provider is auto-detected from whichever key is set, or can be specified with `--provider`.
-
-## Version Sets
-
-### `takumi version-set check`
-
-Display pinned dependency versions from `takumi-versions.yaml`. Alias: `takumi vs check`.
-
-## AI Skills
-
-### `takumi ai context`
-
-Regenerate `.takumi/TAKUMI.md` and the AI agent config file.
-
-### `takumi ai diagnose <package>`
-
-Render a diagnostic prompt for a failed package. Reads the most recent log from `.takumi/logs/`, collects git diff, dependency chain, and env status.
-
-### `takumi ai review`
-
-Render a code review prompt from the current git diff and affected packages.
-
-### `takumi ai optimize`
-
-Render a build optimization prompt from `.takumi/metrics.json` and the dependency graph.
-
-### `takumi ai onboard`
-
-Render a workspace briefing prompt with all configs and the dependency graph. Designed to bootstrap a new AI session.
-
-### `takumi ai skill list`
-
-List all available skills with source labels (built-in, workspace, package).
-
-### `takumi ai skill show <name>`
-
-Print a skill's prompt template and metadata.
-
-### `takumi ai skill run <name>`
-
-Render a skill with workspace context and print the result.
-
-## Documentation
-
-### `takumi docs generate`
-
-Generate documentation from the current workspace state:
-
-- `docs/user/commands.md` — CLI reference
-- `docs/user/skills-reference.md` — AI skills
-- `docs/user/config-reference.md` — config schemas
-- `docs/user/packages.md` — package table
-
-```bash
-takumi docs generate             # Generate docs
-takumi docs generate --ai        # Also run doc-writer skill
-```
-
-### `takumi docs hook install`
-
-Install a git pre-commit hook that auto-regenerates docs.
-
-### `takumi docs hook remove`
-
-Remove the pre-commit hook.
-
-## Benchmarking
-
-### `takumi benchmark [scenarios...]`
-
-Run performance benchmarks comparing agent work with and without Takumi. Measures token usage, tool calls, turns, errors, and wall-clock time.
-
-```bash
-takumi benchmark                         # Run all scenarios
-takumi benchmark fix-build-error         # Run specific scenario
-takumi benchmark --publish               # Publish results to GitHub Gist
-takumi benchmark --model claude-sonnet-4-5-20241022
-```
-
-**Available scenarios:**
-
-| Scenario | Description |
-|----------|-------------|
-| `fix-build-error` | Find and fix a type error in a Go HTTP handler |
-| `scoped-rebuild` | After changing shared lib, build only affected packages |
-| `understand-structure` | Explain dependency graph and build order of a 4-package monorepo |
-
-**Flags:**
-- `--publish` — generate a markdown report and publish to a GitHub Gist
-- `--model <model>` — override the LLM model (default: `claude-haiku-4-5-20251001`)
-
-Requires `ANTHROPIC_API_KEY` set in environment or `.env` file.
-
-### `takumi benchmark iterate`
-
-Run an iterative setup benchmark that tests how efficiently an agent can onboard to a freshly-cloned project. Results are appended to `history.json` for tracking improvements over time.
-
-```bash
-takumi benchmark iterate                 # Run and append to history
-takumi benchmark iterate --note "improved README"
-takumi benchmark iterate --publish       # Publish trend report to Gist
-```
-
-**Flags:**
-- `--note <text>` — annotate this run (e.g. what changed since last run)
-- `--publish` — publish trend report with full history to GitHub Gist
-- `--model <model>` — override the LLM model
-
-Each run creates a transcript log in `tests/benchmark/iterative/logs/` and appends metrics to `history.json`. The dashboard shows the current run and a trend comparison against the first run.
-
-## MCP Server
-
-### `takumi mcp serve`
-
-Start a Model Context Protocol server over stdio. This allows AI agents (Claude Code, etc.) to operate the workspace directly via JSON-RPC.
-
-```bash
-takumi mcp serve
-```
-
-The server exposes 7 tools:
-
-| Tool | Description |
-|------|-------------|
-| `takumi_status` | Workspace health dashboard |
-| `takumi_build` | Build packages (supports `packages`, `affected`, `no_cache` params) |
-| `takumi_test` | Run tests (same params as build) |
-| `takumi_diagnose` | Read build/test failure logs for a package |
-| `takumi_affected` | List packages affected by file changes |
-| `takumi_validate` | Validate all config files |
-| `takumi_graph` | Show dependency graph |
-
-For Claude Code integration, add a `.mcp.json` file to your project root:
-
-```json
-{
-  "mcpServers": {
-    "takumi": {
-      "command": "takumi",
-      "args": ["mcp", "serve"]
-    }
-  }
-}
-```
-
-For development (building from source), you can use `go run` instead:
-
-```json
-{
-  "mcpServers": {
-    "takumi": {
-      "command": "go",
-      "args": ["run", "./cmd/takumi", "mcp", "serve"]
-    }
-  }
-}
-```
-
-### `takumi mcp install`
-
-Register Takumi as a global MCP server so its tools are available in every project — even before running `takumi init`.
-
-```bash
-takumi mcp install
-```
-
-Currently supports Claude Code. Writes to `~/.claude/claude_desktop_config.json`. If the current directory is not a Takumi workspace, `takumi_status` will guide the agent to run `takumi init`.
-
-## Initialization
-
-### `takumi init [name]`
-
-Initialize a Takumi package in the current directory. If `name` is given, creates or enters that directory first.
-
-```bash
-takumi init                      # Init in cwd
-takumi init service-a            # Init in ./service-a/
-takumi init --agent claude       # Skip agent selection prompt
-```
-
-### `takumi init --root <name>`
-
-Create a new project directory with workspace + package inside it.
-
-```bash
-takumi init --root my-project    # Creates my-project/ with full setup
-```
+Auto-generated from CLI definitions via `cobra/doc`.
+
+Individual command pages are in [commands/](commands/).
+
+- [`takumi affected`](commands/takumi_affected.md) — List packages affected by recent changes
+- [`takumi ai context`](commands/takumi_ai_context.md) — Regenerate AI context and integrations
+- [`takumi ai diagnose`](commands/takumi_ai_diagnose.md) — Triage a build/test failure for a package
+- [`takumi ai help`](commands/takumi_ai_help.md) — Help about any command
+- [`takumi ai onboard`](commands/takumi_ai_onboard.md) — Generate a workspace briefing for new developers
+- [`takumi ai optimize`](commands/takumi_ai_optimize.md) — Analyze build performance and suggest improvements
+- [`takumi ai review`](commands/takumi_ai_review.md) — Summarize workspace changes for code review
+- [`takumi ai skill help`](commands/takumi_ai_skill_help.md) — Help about any command
+- [`takumi ai skill list`](commands/takumi_ai_skill_list.md) — List all available skills
+- [`takumi ai skill run`](commands/takumi_ai_skill_run.md) — Collect context, render skill template, and output
+- [`takumi ai skill show`](commands/takumi_ai_skill_show.md) — Print a skill's prompt template
+- [`takumi benchmark`](commands/takumi_benchmark.md) — Run performance benchmarks comparing agent work with and without Takumi
+- [`takumi benchmark help`](commands/takumi_benchmark_help.md) — Help about any command
+- [`takumi benchmark iterate`](commands/takumi_benchmark_iterate.md) — Run iterative setup benchmark and track improvements over time
+- [`takumi build`](commands/takumi_build.md) — Run build phase for packages
+- [`takumi build clean`](commands/takumi_build_clean.md) — Remove build artifacts
+- [`takumi build help`](commands/takumi_build_help.md) — Help about any command
+- [`takumi checkout`](commands/takumi_checkout.md) — Clone a repo and add it to the workspace
+- [`takumi completion bash`](commands/takumi_completion_bash.md) — Generate the autocompletion script for bash
+- [`takumi completion fish`](commands/takumi_completion_fish.md) — Generate the autocompletion script for fish
+- [`takumi completion help`](commands/takumi_completion_help.md) — Help about any command
+- [`takumi completion powershell`](commands/takumi_completion_powershell.md) — Generate the autocompletion script for powershell
+- [`takumi completion zsh`](commands/takumi_completion_zsh.md) — Generate the autocompletion script for zsh
+- [`takumi docs check`](commands/takumi_docs_check.md) — Validate that generated docs are up-to-date with source code
+- [`takumi docs generate`](commands/takumi_docs_generate.md) — Regenerate docs from code and config
+- [`takumi docs help`](commands/takumi_docs_help.md) — Help about any command
+- [`takumi docs hook help`](commands/takumi_docs_hook_help.md) — Help about any command
+- [`takumi docs hook install`](commands/takumi_docs_hook_install.md) — Install pre-commit hook that regenerates docs
+- [`takumi docs hook remove`](commands/takumi_docs_hook_remove.md) — Remove the pre-commit hook
+- [`takumi env clean`](commands/takumi_env_clean.md) — Tear down runtime environments
+- [`takumi env help`](commands/takumi_env_help.md) — Help about any command
+- [`takumi env list`](commands/takumi_env_list.md) — Show runtime environment status for all packages
+- [`takumi env setup`](commands/takumi_env_setup.md) — Create runtime environments for packages
+- [`takumi graph`](commands/takumi_graph.md) — Print the dependency graph
+- [`takumi help`](commands/takumi_help.md) — Help about any command
+- [`takumi init`](commands/takumi_init.md) — Initialize a new package or workspace
+- [`takumi mcp help`](commands/takumi_mcp_help.md) — Help about any command
+- [`takumi mcp install`](commands/takumi_mcp_install.md) — Register Takumi as a global MCP server for AI agents
+- [`takumi mcp serve`](commands/takumi_mcp_serve.md) — Start MCP server over stdio
+- [`takumi remove`](commands/takumi_remove.md) — Remove a package from the workspace
+- [`takumi review`](commands/takumi_review.md) — Run a thorough code review of all workspace changes
+- [`takumi run`](commands/takumi_run.md) — Run any named phase for packages
+- [`takumi status`](commands/takumi_status.md) — Show workspace health dashboard
+- [`takumi sync`](commands/takumi_sync.md) — Pull or clone all tracked sources
+- [`takumi test`](commands/takumi_test.md) — Run test phase for packages
+- [`takumi validate`](commands/takumi_validate.md) — Check workspace and package configs for errors
+- [`takumi version-set check`](commands/takumi_version-set_check.md) — Show declared versions across the workspace
+- [`takumi version-set help`](commands/takumi_version-set_help.md) — Help about any command
