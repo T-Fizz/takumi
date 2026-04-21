@@ -24,29 +24,10 @@ builds:
     ldflags:
       - -s -w -X github.com/tfitz/takumi/src/cli.version={{.Version}}
 
-  - id: t
-    binary: t
-    main: ./cmd/takumi
-    env:
-      - CGO_ENABLED=0
-    goos:
-      - linux
-      - darwin
-      - windows
-    goarch:
-      - amd64
-      - arm64
-    ignore:
-      - goos: windows
-        goarch: arm64
-    ldflags:
-      - -s -w -X github.com/tfitz/takumi/src/cli.version={{.Version}}
-
 archives:
   - id: default
     builds:
       - takumi
-      - t
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     format_overrides:
       - goos: windows
@@ -76,7 +57,7 @@ brews:
     license: AGPL-3.0
     install: |
       bin.install "takumi"
-      bin.install "t"
+      bin.install_symlink bin/"takumi" => "t"
     test: |
       assert_match "takumi", shell_output("#{bin}/takumi --help")
 
