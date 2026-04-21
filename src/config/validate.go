@@ -34,7 +34,7 @@ func (f Finding) String() string {
 
 var validAgents = map[string]bool{
 	"claude": true, "cursor": true, "copilot": true,
-	"windsurf": true, "cline": true, "none": true,
+	"windsurf": true, "cline": true, "kiro": true, "none": true,
 }
 
 var validStrategies = map[string]bool{
@@ -61,7 +61,7 @@ func ValidateWorkspace(cfg *WorkspaceConfig) []Finding {
 			findings = append(findings, Finding{
 				Severity: SeverityError,
 				Field:    "workspace.ai.agent",
-				Message:  fmt.Sprintf("%q is not a supported agent (claude, cursor, copilot, windsurf, cline, none)", agent),
+				Message:  fmt.Sprintf("%q is not a supported agent (claude, cursor, copilot, windsurf, cline, kiro, none)", agent),
 			})
 		}
 	}

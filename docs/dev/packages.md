@@ -117,24 +117,6 @@ func NewServer() *server.MCPServer
 
 ---
 
-## skills
-
-**Files:** skills.go
-
-```
-Package skills loads, renders, and manages AI skill templates.
-func Render(prompt string, vars map[string]string) string
-type LoadedSkill struct{ ... }
-    func LoadBuiltins() ([]LoadedSkill, error)
-    func LoadFromDir(dir string, source Source) ([]LoadedSkill, error)
-type Skill struct{ ... }
-type SkillFile struct{ ... }
-type Source int
-    const SourceBuiltin Source = iota ...
-```
-
----
-
 ## ui
 
 **Files:** logger.go, styles.go

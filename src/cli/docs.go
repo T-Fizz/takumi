@@ -121,7 +121,7 @@ func runDocsGenerate(cmd *cobra.Command, args []string) error {
 	cfgBuf.WriteString("  settings:\n")
 	cfgBuf.WriteString("    parallel: <bool>       # Enable parallel builds (default: true)\n")
 	cfgBuf.WriteString("  ai:\n")
-	cfgBuf.WriteString("    agent: <string>        # AI agent (claude, cursor, copilot, windsurf, cline)\n")
+	cfgBuf.WriteString("    agent: <string>        # AI agent (claude, cursor, copilot, windsurf, cline, kiro)\n")
 	cfgBuf.WriteString("    instructions: <string> # Path to takumi-ai.yaml\n")
 	cfgBuf.WriteString("```\n\n")
 

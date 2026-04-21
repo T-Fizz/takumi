@@ -4,11 +4,10 @@ Takumi (匠) — AI-aware, language-agnostic package builder
 
 ### Synopsis
 
-Takumi is an AI-aware, language-agnostic package builder that works with any
+Takumi is an AI-aware, language-agnostic workspace builder that works with any
 project in any git repo. It runs user-defined shell commands, manages optional
 per-package runtime environments, builds a dependency DAG for parallel execution,
-and ships with an AI skills system that teaches AI assistants how to operate
-the workspace.
+and generates an operator prompt that teaches AI agents how to use the workspace.
 
 ### Options
 
@@ -19,7 +18,6 @@ the workspace.
 ### SEE ALSO
 
 * [takumi affected](takumi_affected.md)	 - List packages affected by recent changes
-* [takumi ai](takumi_ai.md)	 - AI skills and context generation
 * [takumi benchmark](takumi_benchmark.md)	 - Run performance benchmarks comparing agent work with and without Takumi
 * [takumi build](takumi_build.md)	 - Run build phase for packages
 * [takumi checkout](takumi_checkout.md)	 - Clone a repo and add it to the workspace

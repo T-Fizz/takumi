@@ -33,9 +33,8 @@ src/workspace/               Workspace detection + package discovery
 src/graph/                   Dependency DAG + topological sort
 src/cache/                   Content-addressed build cache
 src/executor/                Phase execution + parallelism
+src/agent/                   Multi-provider LLM runner (Anthropic, OpenAI)
 src/mcp/                     MCP server (Model Context Protocol)
-src/skills/                  AI skill templates
-src/skills/builtin/          Embedded YAML skills
 src/ui/                      Terminal styling
 tests/integration/           Promptfoo integration tests
 docs/user/                   User-facing documentation
@@ -48,14 +47,6 @@ docs/dev/                    Developer documentation
 2. Define the Cobra command and register it in an `init()` function
 3. Call `requireWorkspace()` if the command needs workspace context
 4. Add tests alongside (`mycommand_test.go`)
-
-## Adding a Built-in Skill
-
-1. Create a YAML file in `src/skills/builtin/`
-2. Follow the schema: `skill.name`, `skill.description`, `skill.prompt`, optional `auto_context` and `max_tokens`
-3. Use `{{variable}}` placeholders for context substitution
-4. Add a command or integration point in `src/cli/ai.go`
-5. Add integration tests in `tests/integration/`
 
 ## Adding an MCP Tool
 

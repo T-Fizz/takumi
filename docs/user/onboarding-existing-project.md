@@ -168,7 +168,6 @@ takumi docs generate             # Auto-generate docs from configs
 
 Creates `docs/user/` with:
 - `commands.md` — CLI reference from Cobra definitions
-- `skills-reference.md` — available AI skills
 - `config-reference.md` — annotated YAML schemas
 - `packages.md` — table of all packages with versions, deps, phases
 
@@ -208,4 +207,4 @@ takumi mcp install
 
 This writes to `~/.claude/claude_desktop_config.json` so Takumi tools are available everywhere — even in projects that haven't run `takumi init` yet.
 
-Either way, Claude Code can call `takumi_build`, `takumi_test`, `takumi_diagnose`, and other tools directly. See [AI Skills](ai-skills.md#mcp-server-integration) for details.
+Either way, Claude Code can call `takumi_build`, `takumi_test`, `takumi_affected`, and other tools directly. See [Commands Reference](commands.md) for the full tool list.

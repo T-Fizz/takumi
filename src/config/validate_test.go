@@ -30,7 +30,7 @@ func TestValidateWorkspace_InvalidAgent(t *testing.T) {
 }
 
 func TestValidateWorkspace_ValidAgents(t *testing.T) {
-	for _, agent := range []string{"claude", "cursor", "copilot", "windsurf", "cline", "none"} {
+	for _, agent := range []string{"claude", "cursor", "copilot", "windsurf", "cline", "kiro", "none"} {
 		cfg := DefaultWorkspaceConfig("test")
 		cfg.Workspace.AI.Agent = agent
 		findings := ValidateWorkspace(cfg)

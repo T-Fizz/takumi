@@ -2,7 +2,7 @@
 
 ## Overview
 
-Takumi is a CLI tool written in Go. It uses Cobra for command routing, YAML for configuration, and a content-addressed cache for incremental builds. The binary is self-contained — built-in AI skill templates are embedded at compile time via `//go:embed`.
+Takumi is a CLI tool written in Go. It uses Cobra for command routing, YAML for configuration, and a content-addressed cache for incremental builds. The binary is self-contained with no external dependencies.
 
 ## Directory Layout
 
@@ -19,8 +19,6 @@ src/
   executor/                   # Phase execution, parallelism, logging
   graph/                      # Dependency DAG, topological sort
   mcp/                        # MCP server (Model Context Protocol)
-  skills/                     # AI skill loading and rendering
-    builtin/
   ui/                         # Terminal styling (lipgloss)
   workspace/                  # Workspace detection, package discovery, git utilities
 ```
@@ -68,25 +66,15 @@ Parallel execution works level by level: all packages within a level are dispatc
 
 Output is tee'd to both `.takumi/logs/{pkg}.{phase}.log` and the terminal (with `[package-name]` prefix). Build metrics are appended to `.takumi/metrics.json` after each run.
 
-### `skills`
-
-Loads AI skill templates from three sources:
-
-1. **Built-in** — Embedded via `//go:embed builtin/*.yaml`, always available
-2. **Workspace** — YAML files in `.takumi/skills/`
-3. **Package** — Defined in `takumi-pkg.yaml` under `ai.tasks`
-
-Template rendering is simple string substitution: `{{key}}` placeholders are replaced with values from a `map[string]string`. No loops, conditionals, or filters.
-
 ### `mcp`
 
-Model Context Protocol server that exposes Takumi operations as tools for AI agents. Uses [mcp-go](https://github.com/mark3labs/mcp-go) SDK with stdio transport. The server registers 7 tools (status, build, test, diagnose, affected, validate, graph) and serializes execution with `WorkerPoolSize(1)`.
+Model Context Protocol server that exposes Takumi operations as tools for AI agents. Uses [mcp-go](https://github.com/mark3labs/mcp-go) SDK with stdio transport. The server registers 6 tools (status, build, test, affected, validate, graph) and serializes execution with `WorkerPoolSize(1)`.
 
 Build/test output goes to log files — tool results return summaries and file paths to reduce token consumption. All handlers set `executor.Quiet = true` to prevent terminal output from corrupting the stdio JSON-RPC transport.
 
 ### `cli`
 
-One file per command group (e.g., `build.go`, `ai.go`, `env.go`, `init.go`). Each file registers its commands in an `init()` function. Commands that need workspace context call `requireWorkspace()`, which detects and loads the workspace or exits with an error.
+One file per command group (e.g., `build.go`, `review.go`, `env.go`, `init.go`). Each file registers its commands in an `init()` function. Commands that need workspace context call `requireWorkspace()`, which detects and loads the workspace or exits with an error.
 
 ### `ui`
 
@@ -115,23 +103,6 @@ takumi build --affected
         │   ├─ cache.Store()       Write entry on success
         │   └─ metrics.Record()    Append to metrics.json
         └─ WaitGroup.Wait()        Block until level completes
-```
-
-## Data Flow: AI Diagnose
-
-```
-takumi ai diagnose api
-    │
-    ├─ workspace.Load()
-    ├─ Read .takumi/logs/api.build.log     Last error output
-    ├─ git diff                             Changed files
-    ├─ graph.TransitiveDependents("api")   Dependency chain
-    ├─ env.Status("api")                   Environment health
-    │
-    ├─ skills.LoadBuiltins()               Find "diagnose" skill
-    ├─ skills.Render(prompt, vars)         Substitute {{variables}}
-    │
-    └─ Print rendered prompt to stdout
 ```
 
 ## Data Flow: MCP Tool Call
@@ -168,4 +139,4 @@ Agent calls takumi_build(affected=true)
 
 **Cache cascading.** Dependency cache keys are included in the hash computation. If a dependency changes, all downstream packages automatically invalidate. No manual cache busting needed.
 
-**Embedded skills.** Built-in skills are compiled into the binary via `//go:embed`. No external files to distribute or lose.
+**Inline operator prompt.** The AI operator prompt is a string constant in `agent.go`, written to `.takumi/TAKUMI.md` during init. No external templates or YAML loaders.
