@@ -44,9 +44,7 @@ jobs:
           cat > Home.md << 'EOF'
           # Takumi
 
-          An AI-native workspace orchestrator that gives agents the build context,
-          dependency awareness, and diagnostic tools they need to operate on
-          polyglot projects correctly.
+          An AI-aware, language-agnostic workspace builder.
 
           ## User Guides
 
@@ -54,7 +52,7 @@ jobs:
           - [[Onboarding Existing Project]]
           - [[Commands]]
           - [[Configuration]]
-          - [[AI Skills]]
+          - [[Ai Skills]] — Agent setup & MCP integration
 
           ## Developer Docs
 
@@ -71,7 +69,7 @@ jobs:
           - [[Onboarding Existing Project]]
           - [[Commands]]
           - [[Configuration]]
-          - [[AI Skills]]
+          - [[Ai Skills|AI Agent Setup]]
 
           **Developer Docs**
           - [[Architecture]]
