@@ -66,6 +66,20 @@ changelog:
       - "^chore:"
       - "^test:"
 
+brews:
+  - repository:
+      owner: T-Fizz
+      name: homebrew-tap
+    name: takumi
+    homepage: https://github.com/T-Fizz/takumi
+    description: "AI-aware, language-agnostic workspace builder"
+    license: AGPL-3.0
+    install: |
+      bin.install "takumi"
+      bin.install "t"
+    test: |
+      assert_match "takumi", shell_output("#{bin}/takumi --help")
+
 release:
   github:
     owner: T-Fizz
