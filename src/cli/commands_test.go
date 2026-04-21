@@ -24,17 +24,9 @@ func TestImplementedCommands(t *testing.T) {
 	}{
 		{"build clean", []string{"build", "clean"}, "Cleaned", false},
 		{"sync", []string{"sync"}, "No tracked sources", false},
-		{"ai context", []string{"ai", "context"}, "Regenerated AI context", false},
-		{"ai review", []string{"ai", "review"}, "Review Prompt", false},
-		{"ai optimize", []string{"ai", "optimize"}, "Optimization Prompt", false},
-		{"ai onboard", []string{"ai", "onboard"}, "Onboarding Prompt", false},
-		{"ai skill list", []string{"ai", "skill", "list"}, "Available Skills", false},
-		{"ai skill show operator", []string{"ai", "skill", "show", "operator"}, "Skill: operator", false},
-		{"ai skill run operator", []string{"ai", "skill", "run", "operator"}, "Running: operator", false},
 		{"docs generate", []string{"docs", "generate"}, "Generating Documentation", false},
 		{"docs hook remove no git", []string{"docs", "hook", "remove"}, "No pre-commit hook", false},
 		{"docs hook install no git", []string{"docs", "hook", "install"}, "", true},
-		{"ai diagnose missing pkg", []string{"ai", "diagnose", "pkg"}, "", true},
 		{"validate", []string{"validate"}, "All configs valid", false},
 	}
 
@@ -89,13 +81,6 @@ func TestAffectedCmd_Flags(t *testing.T) {
 	require.NotNil(t, f)
 }
 
-// TestDocsGenerateCmd_Flags verifies the --ai flag is registered.
-func TestDocsGenerateCmd_Flags(t *testing.T) {
-	f := docsGenerateCmd.Flags().Lookup("ai")
-	require.NotNil(t, f)
-	assert.Equal(t, "false", f.DefValue)
-}
-
 // TestVersionSetCmd_Alias verifies the "vs" alias is registered.
 func TestVersionSetCmd_Alias(t *testing.T) {
 	assert.Contains(t, versionSetCmd.Aliases, "vs")
@@ -105,7 +90,7 @@ func TestVersionSetCmd_Alias(t *testing.T) {
 func TestCommandTree_SubcommandsRegistered(t *testing.T) {
 	rootSubs := commandNames(rootCmd.Commands())
 	for _, name := range []string{"init", "build", "test", "run", "checkout", "remove",
-		"sync", "env", "graph", "status", "affected", "version-set", "ai", "docs", "validate"} {
+		"sync", "env", "graph", "status", "affected", "version-set", "docs", "validate", "review"} {
 		assert.Contains(t, rootSubs, name, "root should have %q subcommand", name)
 	}
 
@@ -119,18 +104,8 @@ func TestCommandTree_SubcommandsRegistered(t *testing.T) {
 		assert.Contains(t, envSubs, name, "env should have %q subcommand", name)
 	}
 
-	aiSubs := commandNames(aiCmd.Commands())
-	for _, name := range []string{"context", "diagnose", "review", "optimize", "onboard", "skill"} {
-		assert.Contains(t, aiSubs, name, "ai should have %q subcommand", name)
-	}
-
-	skillSubs := commandNames(aiSkillCmd.Commands())
-	for _, name := range []string{"list", "show", "run"} {
-		assert.Contains(t, skillSubs, name, "ai skill should have %q subcommand", name)
-	}
-
 	docsSubs := commandNames(docsCmd.Commands())
-	for _, name := range []string{"generate", "hook"} {
+	for _, name := range []string{"generate", "check", "hook"} {
 		assert.Contains(t, docsSubs, name, "docs should have %q subcommand", name)
 	}
 

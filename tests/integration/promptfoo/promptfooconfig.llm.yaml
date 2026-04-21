@@ -1,19 +1,19 @@
-# Takumi AI Skills — LLM-Graded Integration Tests
+# Takumi Integration Tests — LLM-Graded
 #
-# Evaluates whether Takumi's rendered prompts are high-quality inputs for AI
-# agents — clear enough to act on, context-rich enough to avoid hallucination,
-# and structured to minimize token waste.
+# Evaluates whether Takumi's operator prompt and CLI output are high-quality
+# inputs for AI agents — clear enough to act on, context-rich enough to avoid
+# hallucination, and structured to minimize token waste.
 #
 # Usage:
-#   cd tests/integration
-#   ANTHROPIC_API_KEY=sk-... npx promptfoo eval -c promptfooconfig.llm.yaml
+#   cd tests/integration/promptfoo
+#   ANTHROPIC_API_KEY=sk-... npx promptfoo eval -c promptfooconfig.llm.yaml --no-cache
 #
 # Or from repo root:
 #   make integration-test-llm
 #
 # Requires: ANTHROPIC_API_KEY environment variable
 
-description: "Takumi AI Skills — LLM Quality Evaluation"
+description: "Takumi Integration Tests — LLM Quality Evaluation"
 
 # Grading model — fast and cheap, only used for rubric judgments
 defaultTest:
@@ -21,19 +21,7 @@ defaultTest:
     provider: anthropic:messages:claude-haiku-4-5-20251001
 
 providers:
-  - id: exec:bash run-skill.sh ai diagnose api
-    label: diagnose
-
-  - id: exec:bash run-skill.sh ai review
-    label: review
-
-  - id: exec:bash run-skill.sh ai optimize
-    label: optimize
-
-  - id: exec:bash run-skill.sh ai onboard
-    label: onboard
-
-  - id: exec:bash run-skill.sh ai skill run operator
+  - id: exec:bash run-takumi-md.sh
     label: operator
 
   - id: exec:bash run-skill.sh status
@@ -43,114 +31,16 @@ providers:
     label: dry-run
 
 prompts:
-  - "{{skill_name}}"
+  - "{{test_name}}"
 
 tests:
-  # ─── diagnose: can an AI act on this? ───────────────────────────────
-  - description: "diagnose prompt gives AI enough context to identify root cause"
-    vars:
-      skill_name: diagnose
-    providers: [diagnose]
-    assert:
-      - type: llm-rubric
-        value: |
-          This is a prompt that will be sent to an AI coding assistant to diagnose
-          a build failure. Evaluate whether the prompt contains ALL of the following:
-          1. The specific package name that failed
-          2. The exact error output including file names and line numbers
-          3. The build phase that failed (build, test, etc.)
-          4. Dependency information so the AI can trace upstream causes
-          5. Clear instructions telling the AI what to determine (root cause, files to fix, suggested fix)
-          The prompt must be actionable — an AI reading it should be able to start
-          diagnosing immediately without asking clarifying questions.
+  # ═══════════════════════════════════════════════════════════════════
+  # Operator Prompt Quality
+  # ═══════════════════════════════════════════════════════════════════
 
-  - description: "diagnose prompt is token-efficient — no unnecessary boilerplate"
+  - description: "operator: gives AI a clear, complete command vocabulary"
     vars:
-      skill_name: diagnose
-    providers: [diagnose]
-    assert:
-      - type: llm-rubric
-        value: |
-          Evaluate this diagnostic prompt for conciseness and signal density.
-          It should NOT contain:
-          - Lengthy preambles or unnecessary context about what Takumi is
-          - Repeated information
-          - Vague instructions like "please help" or "try your best"
-          It SHOULD be direct, structured, and every line should serve a purpose.
-          A good diagnostic prompt gets to the error fast and tells the AI exactly
-          what format to respond in.
-
-  # ─── review: structured enough for code review? ─────────────────────
-  - description: "review prompt structures context for useful code review"
-    vars:
-      skill_name: review
-    providers: [review]
-    assert:
-      - type: llm-rubric
-        value: |
-          This prompt will be sent to an AI to produce a code review summary.
-          Evaluate whether it:
-          1. Clearly identifies which packages are affected
-          2. Includes or references a git diff (or explains it's unavailable)
-          3. Asks for specific deliverables (summary, per-package changes, risk areas)
-          4. Gives the AI enough structure to produce a review that a human can act on
-          The output format should be clear enough that the AI won't ramble.
-
-  # ─── optimize: enough data to give real advice? ─────────────────────
-  - description: "optimize prompt provides actionable telemetry data"
-    vars:
-      skill_name: optimize
-    providers: [optimize]
-    assert:
-      - type: llm-rubric
-        value: |
-          This prompt asks an AI to analyze build performance. Evaluate whether:
-          1. It includes actual build timing data (not just placeholders)
-          2. It includes the dependency graph structure
-          3. It asks for specific optimization categories (parallelism, skipping, bottlenecks)
-          4. The data is concrete enough that the AI can give specific recommendations
-             rather than generic advice like "consider caching"
-          The AI should be able to point to specific packages and phases.
-
-  # ─── onboard: could an AI operate the workspace from this alone? ────
-  - description: "onboard prompt gives complete workspace mental model"
-    vars:
-      skill_name: onboard
-    providers: [onboard]
-    assert:
-      - type: llm-rubric
-        value: |
-          This prompt asks an AI to generate a workspace briefing. Evaluate whether
-          a NEW AI agent — with zero prior context — could understand the workspace
-          from this prompt alone. It must include:
-          1. Workspace identity (name, purpose)
-          2. All packages with their roles and relationships
-          3. The dependency graph showing build order
-          4. Enough detail to answer "what does this project do?" and "how do I build it?"
-          This is the most important prompt in the system — it bootstraps AI understanding.
-
-  - description: "onboard prompt uses structured data over prose"
-    vars:
-      skill_name: onboard
-    providers: [onboard]
-    assert:
-      - type: llm-rubric
-        value: |
-          Evaluate this onboarding prompt for information density. An AI agent's
-          context window is expensive. This prompt should:
-          1. Include raw config data (YAML, JSON) that an AI can parse — this is
-             PREFERRED over narrating the same information in prose
-          2. Not repeat the same facts in both prose and data sections
-          3. Ask for structured output (numbered lists, specific sections)
-          Embedding raw YAML configs is a GOOD practice — it gives the AI parseable
-          data rather than a summary that might lose detail. Only rate poorly if
-          there is significant redundancy (same info stated multiple times) or if
-          the prompt includes lengthy boilerplate unrelated to the workspace.
-
-  # ─── operator: clear workflow instructions? ─────────────────────────
-  - description: "operator skill gives AI a clear, complete command vocabulary"
-    vars:
-      skill_name: operator
+      test_name: operator-vocabulary
     providers: [operator]
     assert:
       - type: llm-rubric
@@ -165,10 +55,36 @@ tests:
              "what commands are available?" or "how do I build?"
           This should function as a complete operating manual in minimal tokens.
 
-  # ─── status: is the dashboard AI-parseable? ─────────────────────────
-  - description: "status output is structured enough for AI to extract state"
+  - description: "operator: complete operating manual in minimal tokens"
     vars:
-      skill_name: status
+      test_name: operator-completeness
+    providers: [operator]
+    assert:
+      - type: llm-rubric
+        value: |
+          Evaluate this operator prompt as a COMPLETE operating manual for an
+          AI agent working in a Takumi workspace. A perfect operator prompt
+          should cover ALL of the following scenarios without the agent needing
+          any other documentation:
+          1. Starting a new session (what to run first)
+          2. Building and testing (which commands, not raw tools)
+          3. Custom phases (deploy, lint, dev)
+          4. Handling failures (what to do when a build fails)
+          5. Understanding structure (graph, not grep)
+          6. Managing dependencies between packages (config, validate)
+          7. Environment management (env setup, not direct install)
+          8. Change management (affected, scoped builds)
+          9. Scaffolding new packages (init, config creation)
+          PASS only if the prompt covers at least 7 of these 9 scenarios
+          with specific, actionable instructions. Vague coverage doesn't count.
+
+  # ═══════════════════════════════════════════════════════════════════
+  # CLI Output Quality
+  # ═══════════════════════════════════════════════════════════════════
+
+  - description: "status: output is structured enough for AI to extract state"
+    vars:
+      test_name: status-parseability
     providers: [status]
     assert:
       - type: llm-rubric
@@ -178,16 +94,14 @@ tests:
           Evaluate whether the output:
           1. Clearly lists all packages with their versions
           2. Shows dependency counts and phase counts per package
-          3. Indicates environment readiness (set up vs not)
-          4. Shows recent build results with pass/fail status
-          5. Is structured enough that an AI could extract facts like
+          3. Shows recent build results with pass/fail status
+          4. Is structured enough that an AI could extract facts like
              "api is at v2.0.1, has 3 phases, depends on 1 package, last build failed"
           The format should be scannable, not a wall of text.
 
-  # ─── dry-run: can AI predict what will happen? ──────────────────────
-  - description: "dry-run output lets AI predict build behavior"
+  - description: "dry-run: output lets AI predict build behavior"
     vars:
-      skill_name: dry-run
+      test_name: dry-run-predictability
     providers: [dry-run]
     assert:
       - type: llm-rubric
@@ -195,10 +109,9 @@ tests:
           This is the output of `takumi build --dry-run` — an execution plan.
           Evaluate whether an AI agent could use this to:
           1. Understand which packages will run and which are cached
-          2. See the exact commands that will execute (pre, cmd, post)
+          2. See the exact commands that will execute
           3. Understand the execution order (levels, sequential vs parallel)
-          4. Know what environment variables will be set
-          5. Predict the full build behavior without actually running it
+          4. Predict the full build behavior without actually running it
           This should be a complete, parseable execution manifest.
 
   # ═══════════════════════════════════════════════════════════════════
@@ -212,7 +125,7 @@ tests:
   # ─── Build & Test scenarios ─────────────────────────────────────────
   - description: "scenario: agent sees go.mod → operator steers to takumi build"
     vars:
-      skill_name: operator
+      test_name: scenario-go-build
     providers: [operator]
     assert:
       - type: llm-rubric
@@ -230,7 +143,7 @@ tests:
 
   - description: "scenario: agent sees package.json → operator steers to takumi build"
     vars:
-      skill_name: operator
+      test_name: scenario-npm-build
     providers: [operator]
     assert:
       - type: llm-rubric
@@ -242,12 +155,11 @@ tests:
 
           The correct answer is (b). PASS only if the prompt explicitly mentions
           that npm run build should NOT be used and takumi build should be used
-          instead. The instruction must be clear enough that even an agent with
-          strong npm habits would choose takumi.
+          instead.
 
   - description: "scenario: agent sees pytest.ini → operator steers to takumi test"
     vars:
-      skill_name: operator
+      test_name: scenario-pytest
     providers: [operator]
     assert:
       - type: llm-rubric
@@ -263,31 +175,30 @@ tests:
 
   - description: "scenario: agent wants to deploy → operator steers to takumi run deploy"
     vars:
-      skill_name: operator
+      test_name: scenario-deploy
     providers: [operator]
     assert:
       - type: llm-rubric
         value: |
-          An AI agent needs to deploy the application. The workspace has deploy
-          phases configured. Given ONLY this operator prompt, would the agent:
+          An AI agent needs to deploy the application. Given ONLY this operator
+          prompt, would the agent:
           (a) Run `fly deploy` or `vercel deploy` directly, OR
           (b) Run `takumi run deploy`
 
           The correct answer is (b). PASS only if the prompt explicitly mentions
-          `takumi run deploy` or `takumi run <phase>` as the way to deploy, and
-          explicitly says not to use fly deploy / vercel deploy directly.
+          `takumi run deploy` as the way to deploy, and explicitly says not to use
+          fly deploy / vercel deploy directly.
 
   # ─── Setup & Scaffolding scenarios ──────────────────────────────────
   - description: "scenario: new directory without config → operator steers to init"
     vars:
-      skill_name: operator
+      test_name: scenario-new-dir
     providers: [operator]
     assert:
       - type: llm-rubric
         value: |
           An AI agent discovers a new source directory that doesn't have a
-          takumi-pkg.yaml file. It wants to build the code in that directory.
-          Given ONLY this operator prompt, would the agent:
+          takumi-pkg.yaml file. Given ONLY this operator prompt, would the agent:
           (a) Run build commands directly on the source files, OR
           (b) Create a takumi-pkg.yaml first, or run `takumi init`
 
@@ -297,13 +208,13 @@ tests:
 
   - description: "scenario: adding package dependency → operator steers to config + validate"
     vars:
-      skill_name: operator
+      test_name: scenario-add-dep
     providers: [operator]
     assert:
       - type: llm-rubric
         value: |
-          An AI agent is adding a dependency between two packages in the workspace.
-          Given ONLY this operator prompt, would the agent:
+          An AI agent is adding a dependency between two packages. Given ONLY
+          this operator prompt, would the agent:
           (a) Just import/require the other package in code, OR
           (b) Add the dependency to the `dependencies` list in takumi-pkg.yaml
               and verify with `takumi validate`
@@ -312,26 +223,23 @@ tests:
           add dependencies to the config file and run validate afterward.
 
   # ─── Failure & Recovery scenarios ───────────────────────────────────
-  - description: "scenario: build fails → operator steers to diagnose not logs"
+  - description: "scenario: build fails → operator gives recovery workflow"
     vars:
-      skill_name: operator
+      test_name: scenario-build-failure
     providers: [operator]
     assert:
       - type: llm-rubric
         value: |
           An AI agent just ran `takumi build` and it failed. The agent needs to
-          understand what went wrong. Given ONLY this operator prompt, would the agent:
-          (a) Read log files directly with `cat .takumi/logs/pkg.build.log`, OR
-          (b) Run `takumi ai diagnose <pkg>`
-
-          The correct answer is (b). PASS only if the prompt explicitly tells
-          the agent to use diagnose and explicitly says NOT to cat/read logs
-          directly. The instruction must be clear enough to override the agent's
-          natural instinct to read log files.
+          understand what went wrong. Given ONLY this operator prompt, does it
+          provide a clear recovery path? The prompt should tell the agent:
+          1. Where to find failure information (logs, output)
+          2. How to fix and re-verify (fix → rebuild → retest)
+          PASS if the prompt provides a concrete failure recovery workflow.
 
   - description: "scenario: config seems wrong → operator steers to validate"
     vars:
-      skill_name: operator
+      test_name: scenario-config-error
     providers: [operator]
     assert:
       - type: llm-rubric
@@ -347,7 +255,7 @@ tests:
   # ─── Change Management scenarios ────────────────────────────────────
   - description: "scenario: source modified → operator steers to affected before build"
     vars:
-      skill_name: operator
+      test_name: scenario-source-modified
     providers: [operator]
     assert:
       - type: llm-rubric
@@ -360,12 +268,11 @@ tests:
 
           The correct answer is (b). PASS only if the prompt provides a clear
           workflow that includes checking affected before building, and uses
-          the --affected flag. The agent should understand the concept of
-          scoped builds.
+          the --affected flag.
 
   - description: "scenario: feature complete → operator gives correct ship workflow"
     vars:
-      skill_name: operator
+      test_name: scenario-ship-workflow
     providers: [operator]
     assert:
       - type: llm-rubric
@@ -377,16 +284,14 @@ tests:
           2. Checking what's affected
           3. Building affected packages
           4. Testing affected packages
-          5. Handling failures via diagnose
 
           PASS if the prompt contains a numbered, sequential workflow that covers
-          all these steps. The workflow must be concrete enough to follow without
-          interpretation.
+          these steps.
 
   # ─── Context & Onboarding scenarios ─────────────────────────────────
   - description: "scenario: new session → operator tells agent to status first"
     vars:
-      skill_name: operator
+      test_name: scenario-new-session
     providers: [operator]
     assert:
       - type: llm-rubric
@@ -402,13 +307,13 @@ tests:
 
   - description: "scenario: agent confused about structure → operator steers to graph"
     vars:
-      skill_name: operator
+      test_name: scenario-structure
     providers: [operator]
     assert:
       - type: llm-rubric
         value: |
-          An AI agent doesn't understand how packages in the workspace relate
-          to each other. Given ONLY this operator prompt, would the agent:
+          An AI agent doesn't understand how packages relate to each other.
+          Given ONLY this operator prompt, would the agent:
           (a) Grep through import statements and require() calls, OR
           (b) Run `takumi graph` to see the dependency DAG
 
@@ -416,9 +321,9 @@ tests:
           that graph should be used instead of grepping for imports.
 
   # ─── Environment scenarios ──────────────────────────────────────────
-  - description: "scenario: agent wants to pip install → operator steers to runtime config"
+  - description: "scenario: agent wants to pip install → operator steers to env setup"
     vars:
-      skill_name: operator
+      test_name: scenario-pip-install
     providers: [operator]
     assert:
       - type: llm-rubric
@@ -426,16 +331,15 @@ tests:
           An AI agent is working on a Python package and wants to install a new
           dependency. Given ONLY this operator prompt, would the agent:
           (a) Run `pip install requests` directly, OR
-          (b) Add the dependency to `runtime.setup` in takumi-pkg.yaml and run
-              `takumi env setup`
+          (b) Edit the manifest, then run `takumi env setup`
 
           The correct answer is (b). PASS only if the prompt explicitly tells the
           agent not to pip install / npm install directly and to use the runtime
-          config instead. This must override strong default behavior.
+          config instead.
 
-  - description: "scenario: agent wants to npm install → operator steers to runtime config"
+  - description: "scenario: agent wants to npm install → operator steers to env setup"
     vars:
-      skill_name: operator
+      test_name: scenario-npm-install
     providers: [operator]
     assert:
       - type: llm-rubric
@@ -443,50 +347,7 @@ tests:
           An AI agent is working on a JavaScript package and wants to install
           dependencies. Given ONLY this operator prompt, would the agent:
           (a) Run `npm install` directly, OR
-          (b) Add to `runtime.setup` in takumi-pkg.yaml and run `takumi env setup`
+          (b) Edit the manifest, then run `takumi env setup`
 
           The correct answer is (b). PASS only if the prompt explicitly tells the
           agent not to install directly and to use the runtime config.
-
-  # ─── MCP scenarios ─────────────────────────────────────────────────
-  - description: "scenario: MCP available → operator steers to MCP tools over CLI"
-    vars:
-      skill_name: operator
-    providers: [operator]
-    assert:
-      - type: llm-rubric
-        value: |
-          An AI agent has MCP tools available (takumi_status, takumi_build, etc.)
-          and also has shell access to run CLI commands. Given ONLY this operator
-          prompt, would the agent:
-          (a) Shell out to `takumi build` via subprocess, OR
-          (b) Use the MCP tool `takumi_build` directly
-
-          The correct answer is (b). PASS only if the prompt explicitly tells
-          agents to prefer MCP tools over CLI when available, and mentions
-          falling back to CLI only on error.
-
-  # ─── Overall completeness ──────────────────────────────────────────
-  - description: "operator: complete operating manual in minimal tokens"
-    vars:
-      skill_name: operator
-    providers: [operator]
-    assert:
-      - type: llm-rubric
-        value: |
-          Evaluate this operator prompt as a COMPLETE operating manual for an
-          AI agent working in a Takumi workspace. A perfect operator prompt
-          should cover ALL of the following scenarios without the agent needing
-          any other documentation:
-          1. Starting a new session (what to run first)
-          2. Building and testing (which commands, not raw tools)
-          3. Custom phases (deploy, lint, dev)
-          4. Handling failures (diagnose, not log reading)
-          5. Understanding structure (graph, not grep)
-          6. Managing dependencies between packages (config, validate)
-          7. Environment management (env setup, not direct install)
-          8. Change management (affected, scoped builds)
-          9. MCP tool preference
-          10. Scaffolding new packages (init, config creation)
-          PASS only if the prompt covers at least 8 of these 10 scenarios
-          with specific, actionable instructions. Vague coverage doesn't count.

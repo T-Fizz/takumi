@@ -14,7 +14,6 @@ import (
 )
 
 func init() {
-	docsGenerateCmd.Flags().Bool("ai", false, "Also run AI doc-writer skill")
 	docsCmd.AddCommand(docsGenerateCmd, docsCheckCmd, docsHookCmd)
 	docsHookCmd.AddCommand(docsHookInstallCmd, docsHookRemoveCmd)
 	rootCmd.AddCommand(docsCmd)
@@ -28,8 +27,7 @@ var docsCmd = &cobra.Command{
 var docsGenerateCmd = &cobra.Command{
 	Use:   "generate",
 	Short: "Regenerate docs from code and config",
-	Long: `Extract documentation from Cobra commands, config structs, and skill definitions.
-Use --ai to also run the doc-writer skill for enhanced generation.`,
+	Long: `Extract documentation from Cobra commands, config structs, and workspace state.`,
 	RunE: runDocsGenerate,
 }
 
@@ -61,7 +59,6 @@ var docsHookRemoveCmd = &cobra.Command{
 
 func runDocsGenerate(cmd *cobra.Command, args []string) error {
 	ws := requireWorkspace()
-	aiFlag, _ := cmd.Flags().GetBool("ai")
 
 	docsDir := filepath.Join(ws.Root, "docs")
 	userDir := filepath.Join(docsDir, "user")
@@ -104,32 +101,7 @@ func runDocsGenerate(cmd *cobra.Command, args []string) error {
 	fmt.Println(ui.StepDone("Generated " + ui.FilePath("docs/user/commands/") + " (per-command pages)"))
 	fmt.Println(ui.StepDone("Generated " + ui.FilePath("docs/user/commands.md") + " (index)"))
 
-	// 2. Skills reference
-	allSkills, _ := loadAllSkills()
-	var skillBuf strings.Builder
-	skillBuf.WriteString("# Takumi Skills Reference\n\n")
-	skillBuf.WriteString("Auto-generated from built-in skill definitions.\n\n")
-	for _, s := range allSkills {
-		fmt.Fprintf(&skillBuf, "## %s\n\n", s.Name)
-		fmt.Fprintf(&skillBuf, "%s\n\n", s.Description)
-		if len(s.AutoContext) > 0 {
-			skillBuf.WriteString("**Auto-context:** ")
-			skillBuf.WriteString(strings.Join(s.AutoContext, ", "))
-			skillBuf.WriteString("\n\n")
-		}
-		if s.MaxTokens > 0 {
-			fmt.Fprintf(&skillBuf, "**Max tokens:** %d\n\n", s.MaxTokens)
-		}
-		skillBuf.WriteString("---\n\n")
-	}
-
-	skillPath := filepath.Join(userDir, "skills-reference.md")
-	if err := os.WriteFile(skillPath, []byte(skillBuf.String()), 0644); err != nil {
-		return fmt.Errorf("writing skills-reference.md: %w", err)
-	}
-	fmt.Println(ui.StepDone("Generated " + ui.FilePath("docs/user/skills-reference.md")))
-
-	// 3. Config reference
+	// 2. Config reference
 	var cfgBuf strings.Builder
 	cfgBuf.WriteString("# Takumi Config Reference\n\n")
 	cfgBuf.WriteString("Auto-generated from config structures.\n\n")
@@ -244,12 +216,6 @@ func runDocsGenerate(cmd *cobra.Command, args []string) error {
 		} else if updated {
 			fmt.Println(ui.StepDone("Updated directory layout in " + ui.FilePath("docs/dev/architecture.md")))
 		}
-	}
-
-	if aiFlag {
-		fmt.Println()
-		fmt.Println(ui.StepInfo("Running doc-writer skill..."))
-		return runAISkillRun(cmd, []string{"doc-writer"})
 	}
 
 	fmt.Println()
@@ -556,7 +522,6 @@ func generateDirectoryLayout(wsRoot string) string {
 		"executor": "Phase execution, parallelism, logging",
 		"graph":    "Dependency DAG, topological sort",
 		"mcp":      "MCP server (Model Context Protocol)",
-		"skills":   "AI skill loading and rendering",
 		"ui":       "Terminal styling (lipgloss)",
 		"workspace": "Workspace detection, package discovery, git utilities",
 	}

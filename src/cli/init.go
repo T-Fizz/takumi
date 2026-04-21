@@ -168,7 +168,7 @@ func initWorkspace(root, name string, agent *AgentType) error {
 	}
 
 	// Create subdirectories
-	for _, sub := range []string{"envs", "logs", "skills", "skills/_builtin"} {
+	for _, sub := range []string{"envs", "logs"} {
 		if err := os.MkdirAll(filepath.Join(markerDir, sub), 0755); err != nil {
 			return fmt.Errorf("creating %s/%s: %w", workspace.MarkerDir, sub, err)
 		}

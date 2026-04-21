@@ -35,8 +35,6 @@ func TestRunInit_CreatesWorkspaceAndPackage(t *testing.T) {
 	assert.DirExists(t, filepath.Join(dir, ".takumi"))
 	assert.DirExists(t, filepath.Join(dir, ".takumi", "envs"))
 	assert.DirExists(t, filepath.Join(dir, ".takumi", "logs"))
-	assert.DirExists(t, filepath.Join(dir, ".takumi", "skills"))
-	assert.DirExists(t, filepath.Join(dir, ".takumi", "skills", "_builtin"))
 
 	// Workspace config created and valid
 	wsCfg, err := config.LoadWorkspaceConfig(filepath.Join(dir, "takumi.yaml"))
@@ -177,8 +175,6 @@ func TestInitWorkspace_CreatesAllDirectories(t *testing.T) {
 	assert.DirExists(t, filepath.Join(dir, ".takumi"))
 	assert.DirExists(t, filepath.Join(dir, ".takumi", "envs"))
 	assert.DirExists(t, filepath.Join(dir, ".takumi", "logs"))
-	assert.DirExists(t, filepath.Join(dir, ".takumi", "skills"))
-	assert.DirExists(t, filepath.Join(dir, ".takumi", "skills", "_builtin"))
 }
 
 func TestInitWorkspace_WritesValidConfig(t *testing.T) {
@@ -234,7 +230,6 @@ func TestInitWorkspace_ErrorWritingConfig(t *testing.T) {
 	// Create .takumi dir but make root read-only so takumi.yaml write fails
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, ".takumi", "envs"), 0755))
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, ".takumi", "logs"), 0755))
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, ".takumi", "skills", "_builtin"), 0755))
 	require.NoError(t, os.Chmod(dir, 0555))
 	t.Cleanup(func() { os.Chmod(dir, 0755) })
 

@@ -17,11 +17,10 @@ var rootCmd = &cobra.Command{
 	Use:     "takumi",
 	Version: version,
 	Short:   "Takumi (匠) — AI-aware, language-agnostic package builder",
-	Long: `Takumi is an AI-aware, language-agnostic package builder that works with any
-project in any git repo. It runs user-defined shell commands, manages optional
-per-package runtime environments, builds a dependency DAG for parallel execution,
-and ships with an AI skills system that teaches AI assistants how to operate
-the workspace.`,
+	Long: `Takumi is an AI-aware, language-agnostic workspace manager that works with any
+project structure — monorepo or multi-repo. It runs user-defined shell commands,
+manages optional per-package runtime environments, builds a dependency DAG for
+parallel execution, and exposes workspace operations via MCP for AI agents.`,
 }
 
 // osExit is the exit function used by Execute and requireWorkspace.

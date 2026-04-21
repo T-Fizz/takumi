@@ -784,61 +784,6 @@ func TestPrintDryRun_PhaseNotDefined(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// envStatus (ai.go helper)
-// ---------------------------------------------------------------------------
-
-func TestEnvStatus_NoPackage(t *testing.T) {
-	dir := realPath(t, t.TempDir())
-	setupWorkspace(t, dir)
-	chdirClean(t, dir)
-
-	ws, err := loadWorkspace()
-	require.NoError(t, err)
-
-	result := envStatus(ws, "nonexistent")
-	assert.Equal(t, "no runtime defined", result)
-}
-
-func TestEnvStatus_NoRuntime(t *testing.T) {
-	dir := realPath(t, t.TempDir())
-	setupWorkspaceWithPackages(t, dir)
-	chdirClean(t, dir)
-
-	ws, err := loadWorkspace()
-	require.NoError(t, err)
-
-	result := envStatus(ws, "svc-a")
-	assert.Equal(t, "no runtime defined", result)
-}
-
-func TestEnvStatus_NotSetUp(t *testing.T) {
-	dir := realPath(t, t.TempDir())
-	setupWorkspaceWithRuntime(t, dir)
-	chdirClean(t, dir)
-
-	ws, err := loadWorkspace()
-	require.NoError(t, err)
-
-	result := envStatus(ws, "rt-pkg")
-	assert.Equal(t, "not set up", result)
-}
-
-func TestEnvStatus_Ready(t *testing.T) {
-	dir := realPath(t, t.TempDir())
-	setupWorkspaceWithRuntime(t, dir)
-	envDir := filepath.Join(dir, workspace.MarkerDir, "envs", "rt-pkg")
-	require.NoError(t, os.MkdirAll(envDir, 0755))
-	chdirClean(t, dir)
-
-	ws, err := loadWorkspace()
-	require.NoError(t, err)
-
-	result := envStatus(ws, "rt-pkg")
-	assert.Contains(t, result, "ready")
-	assert.Contains(t, result, envDir)
-}
-
-// ---------------------------------------------------------------------------
 // mapFilesToPackages
 // ---------------------------------------------------------------------------
 
@@ -1532,207 +1477,6 @@ func TestGitChangedFiles_FallbackToWorkingTree(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// AI commands — additional coverage
-// ---------------------------------------------------------------------------
-
-func TestRunAIDiagnose_WithLogFile(t *testing.T) {
-	dir := realPath(t, t.TempDir())
-	setupWorkspaceWithPackages(t, dir)
-	chdirClean(t, dir)
-
-	// Create a log file for svc-a build
-	logDir := filepath.Join(dir, workspace.MarkerDir, "logs")
-	require.NoError(t, os.MkdirAll(logDir, 0755))
-	logContent := "ERROR: build failed at line 42\n"
-	require.NoError(t, os.WriteFile(filepath.Join(logDir, "svc-a.build.log"), []byte(logContent), 0644))
-
-	out := captureStdout(t, func() {
-		err := runAIDiagnose(aiDiagnoseCmd, []string{"svc-a"})
-		assert.NoError(t, err)
-	})
-	assert.Contains(t, out, "Diagnostic: svc-a")
-}
-
-func TestRunAIDiagnose_NoLogFile(t *testing.T) {
-	dir := realPath(t, t.TempDir())
-	setupWorkspaceWithPackages(t, dir)
-	chdirClean(t, dir)
-
-	out := captureStdout(t, func() {
-		err := runAIDiagnose(aiDiagnoseCmd, []string{"svc-a"})
-		assert.NoError(t, err)
-	})
-	assert.Contains(t, out, "No log file found")
-}
-
-func TestRunAIDiagnose_PackageNotFound(t *testing.T) {
-	dir := realPath(t, t.TempDir())
-	setupWorkspace(t, dir)
-	chdirClean(t, dir)
-
-	err := runAIDiagnose(aiDiagnoseCmd, []string{"nonexistent"})
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "not found in workspace")
-}
-
-func TestRunAIDiagnose_TestLogFallback(t *testing.T) {
-	dir := realPath(t, t.TempDir())
-	setupWorkspaceWithPackages(t, dir)
-	chdirClean(t, dir)
-
-	// Create only a test log (no build log)
-	logDir := filepath.Join(dir, workspace.MarkerDir, "logs")
-	require.NoError(t, os.MkdirAll(logDir, 0755))
-	require.NoError(t, os.WriteFile(filepath.Join(logDir, "svc-a.test.log"), []byte("test failed\n"), 0644))
-
-	out := captureStdout(t, func() {
-		err := runAIDiagnose(aiDiagnoseCmd, []string{"svc-a"})
-		assert.NoError(t, err)
-	})
-	assert.Contains(t, out, "Diagnostic: svc-a")
-}
-
-func TestRunAISkillRun_Diagnose(t *testing.T) {
-	dir := realPath(t, t.TempDir())
-	setupWorkspace(t, dir)
-	chdirClean(t, dir)
-
-	err := runAISkillRun(aiSkillRunCmd, []string{"diagnose"})
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "use 'takumi ai diagnose <package>' instead")
-}
-
-func TestRunAISkillRun_Review(t *testing.T) {
-	dir := realPath(t, t.TempDir())
-	setupWorkspace(t, dir)
-	chdirClean(t, dir)
-
-	out := captureStdout(t, func() {
-		err := runAISkillRun(aiSkillRunCmd, []string{"review"})
-		assert.NoError(t, err)
-	})
-	assert.Contains(t, out, "Review Prompt")
-}
-
-func TestRunAISkillRun_Optimize(t *testing.T) {
-	dir := realPath(t, t.TempDir())
-	setupWorkspace(t, dir)
-	chdirClean(t, dir)
-
-	out := captureStdout(t, func() {
-		err := runAISkillRun(aiSkillRunCmd, []string{"optimize"})
-		assert.NoError(t, err)
-	})
-	assert.Contains(t, out, "Optimization Prompt")
-}
-
-func TestRunAISkillRun_Onboard(t *testing.T) {
-	dir := realPath(t, t.TempDir())
-	setupWorkspace(t, dir)
-	chdirClean(t, dir)
-
-	out := captureStdout(t, func() {
-		err := runAISkillRun(aiSkillRunCmd, []string{"onboard"})
-		assert.NoError(t, err)
-	})
-	assert.Contains(t, out, "Onboarding Prompt")
-}
-
-func TestRunAISkillRun_NotFound(t *testing.T) {
-	dir := realPath(t, t.TempDir())
-	setupWorkspace(t, dir)
-	chdirClean(t, dir)
-
-	err := runAISkillRun(aiSkillRunCmd, []string{"totally-fake-skill"})
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "not found")
-}
-
-func TestRunAISkillShow_WithAutoContext(t *testing.T) {
-	dir := realPath(t, t.TempDir())
-	setupWorkspace(t, dir)
-	chdirClean(t, dir)
-
-	// "review" skill has auto-context defined
-	out := captureStdout(t, func() {
-		err := runAISkillShow(aiSkillShowCmd, []string{"review"})
-		assert.NoError(t, err)
-	})
-	assert.Contains(t, out, "Skill: review")
-	assert.Contains(t, out, "Auto-context")
-	assert.Contains(t, out, "Prompt template")
-}
-
-func TestRunAISkillShow_WithoutAutoContext(t *testing.T) {
-	dir := realPath(t, t.TempDir())
-	setupWorkspace(t, dir)
-	chdirClean(t, dir)
-
-	// "operator" skill has no auto-context
-	out := captureStdout(t, func() {
-		err := runAISkillShow(aiSkillShowCmd, []string{"operator"})
-		assert.NoError(t, err)
-	})
-	assert.Contains(t, out, "Skill: operator")
-	assert.Contains(t, out, "Prompt template")
-	assert.NotContains(t, out, "Auto-context")
-}
-
-func TestRunAISkillShow_NotFound(t *testing.T) {
-	dir := realPath(t, t.TempDir())
-	setupWorkspace(t, dir)
-	chdirClean(t, dir)
-
-	err := runAISkillShow(aiSkillShowCmd, []string{"no-such-skill"})
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "not found")
-}
-
-func TestRunAIContext_WithAgent(t *testing.T) {
-	dir := realPath(t, t.TempDir())
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, ".takumi"), 0755))
-	cfg := config.DefaultWorkspaceConfig("test-ws")
-	cfg.Workspace.AI.Agent = "claude"
-	data, err := cfg.Marshal()
-	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "takumi.yaml"), data, 0644))
-	chdirClean(t, dir)
-
-	out := captureStdout(t, func() {
-		err := runAIContext(aiContextCmd, nil)
-		assert.NoError(t, err)
-	})
-	assert.Contains(t, out, "Regenerated AI context")
-	// Should have created CLAUDE.md
-	assert.FileExists(t, filepath.Join(dir, "CLAUDE.md"))
-	// Should have created .takumi/TAKUMI.md
-	assert.FileExists(t, filepath.Join(dir, ".takumi", "TAKUMI.md"))
-}
-
-func TestRunAIContext_NoAgent(t *testing.T) {
-	dir := realPath(t, t.TempDir())
-	setupWorkspace(t, dir)
-	chdirClean(t, dir)
-
-	out := captureStdout(t, func() {
-		err := runAIContext(aiContextCmd, nil)
-		assert.NoError(t, err)
-	})
-	assert.Contains(t, out, "Regenerated AI context")
-}
-
-func TestFindSkill_NotFound(t *testing.T) {
-	result := findSkill("completely-nonexistent-skill-xyz")
-	assert.Nil(t, result)
-}
-
-func TestFindSkill_Found(t *testing.T) {
-	result := findSkill("operator")
-	assert.NotNil(t, result)
-	assert.Equal(t, "operator", result.Name)
-}
-
-// ---------------------------------------------------------------------------
 // docs commands — additional coverage
 // ---------------------------------------------------------------------------
 
@@ -1747,7 +1491,7 @@ func TestRunDocsGenerate_WithPackages(t *testing.T) {
 	})
 	assert.Contains(t, out, "Generating Documentation")
 	assert.Contains(t, out, "commands.md")
-	assert.Contains(t, out, "skills-reference.md")
+	assert.Contains(t, out, "config-reference.md")
 	assert.Contains(t, out, "config-reference.md")
 	assert.Contains(t, out, "packages.md")
 	// Verify files were created
@@ -1920,24 +1664,6 @@ func TestAgentNames_Cov(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// gitDiffOutput
-// ---------------------------------------------------------------------------
-
-func TestGitDiffOutput_NotGitRepo(t *testing.T) {
-	dir := t.TempDir()
-	result := gitDiffOutput(dir)
-	assert.Contains(t, result, "git diff unavailable")
-}
-
-func TestGitDiffOutput_CleanRepo(t *testing.T) {
-	dir := realPath(t, t.TempDir())
-	setupGitWorkspace(t, dir)
-
-	result := gitDiffOutput(dir)
-	assert.Empty(t, result)
-}
-
-// ---------------------------------------------------------------------------
 // runEnvClean — error path (read-only dir)
 // ---------------------------------------------------------------------------
 
@@ -2015,7 +1741,7 @@ phases:
 }
 
 // ---------------------------------------------------------------------------
-// runAIReview and runAIOptimize in git workspace
+// validate — cycle detection
 // ---------------------------------------------------------------------------
 
 func TestRunValidate_CycleDetection(t *testing.T) {
@@ -2091,67 +1817,6 @@ phases:
 	})
 	assert.Contains(t, out, "error")
 	assert.Contains(t, out, "warning")
-}
-
-func TestRunDocsGenerate_WithAIFlag(t *testing.T) {
-	dir := realPath(t, t.TempDir())
-	setupWorkspace(t, dir)
-	chdirClean(t, dir)
-
-	// Reset the --ai flag
-	f := docsGenerateCmd.Flags().Lookup("ai")
-	if f != nil {
-		f.Value.Set("false")
-		f.Changed = false
-	}
-
-	out := captureStdout(t, func() {
-		rootCmd.SetArgs([]string{"docs", "generate", "--ai"})
-		err := rootCmd.Execute()
-		// may fail (doc-writer skill may or may not produce errors), but should execute
-		_ = err
-	})
-	assert.Contains(t, out, "Generating Documentation")
-	assert.Contains(t, out, "doc-writer")
-}
-
-func TestRunAIReview_InGitWorkspace(t *testing.T) {
-	dir := realPath(t, t.TempDir())
-	setupGitWorkspace(t, dir)
-	chdirClean(t, dir)
-
-	out := captureStdout(t, func() {
-		err := runAIReview(aiReviewCmd, nil)
-		assert.NoError(t, err)
-	})
-	assert.Contains(t, out, "Review Prompt")
-}
-
-func TestRunAIOptimize_WithMetrics(t *testing.T) {
-	dir := realPath(t, t.TempDir())
-	setupWorkspaceWithPackages(t, dir)
-	writeMetrics(t, dir, []executor.MetricsEntry{
-		{Timestamp: "2025-01-01T00:00:00Z", Phase: "build", Package: "svc-a", DurationMs: 100, ExitCode: 0},
-	})
-	chdirClean(t, dir)
-
-	out := captureStdout(t, func() {
-		err := runAIOptimize(aiOptimizeCmd, nil)
-		assert.NoError(t, err)
-	})
-	assert.Contains(t, out, "Optimization Prompt")
-}
-
-func TestRunAIOnboard_WithPackages(t *testing.T) {
-	dir := realPath(t, t.TempDir())
-	setupWorkspaceWithPackages(t, dir)
-	chdirClean(t, dir)
-
-	out := captureStdout(t, func() {
-		err := runAIOnboard(aiOnboardCmd, nil)
-		assert.NoError(t, err)
-	})
-	assert.Contains(t, out, "Onboarding Prompt")
 }
 
 // ---------------------------------------------------------------------------
@@ -2492,97 +2157,6 @@ func TestRunValidate_VersionSetValid(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// AI commands — all branches
-// ---------------------------------------------------------------------------
-
-func TestRunAIReview(t *testing.T) {
-	dir := realPath(t, t.TempDir())
-	setupGitWorkspace(t, dir) // already calls setupWorkspaceWithPackages
-	chdirClean(t, dir)
-
-	out := captureStdout(t, func() {
-		err := runAIReview(aiReviewCmd, nil)
-		assert.NoError(t, err)
-	})
-	assert.Contains(t, out, "Review Prompt")
-}
-
-func TestRunAIOptimize_NoMetrics(t *testing.T) {
-	dir := realPath(t, t.TempDir())
-	setupWorkspaceWithPackages(t, dir)
-	chdirClean(t, dir)
-
-	out := captureStdout(t, func() {
-		err := runAIOptimize(aiOptimizeCmd, nil)
-		assert.NoError(t, err)
-	})
-	assert.Contains(t, out, "Optimization Prompt")
-}
-
-func TestRunAIOnboard(t *testing.T) {
-	dir := realPath(t, t.TempDir())
-	setupWorkspaceWithPackages(t, dir)
-	chdirClean(t, dir)
-
-	out := captureStdout(t, func() {
-		err := runAIOnboard(aiOnboardCmd, nil)
-		assert.NoError(t, err)
-	})
-	assert.Contains(t, out, "Onboarding Prompt")
-}
-
-func TestRunAISkillList(t *testing.T) {
-	dir := realPath(t, t.TempDir())
-	setupWorkspace(t, dir)
-	chdirClean(t, dir)
-
-	out := captureStdout(t, func() {
-		err := runAISkillList(aiSkillListCmd, nil)
-		assert.NoError(t, err)
-	})
-	assert.Contains(t, out, "Available Skills")
-	assert.Contains(t, out, "operator")
-	assert.Contains(t, out, "diagnose")
-}
-
-func TestRunAISkillShow(t *testing.T) {
-	dir := realPath(t, t.TempDir())
-	setupWorkspace(t, dir)
-	chdirClean(t, dir)
-
-	out := captureStdout(t, func() {
-		err := runAISkillShow(aiSkillShowCmd, []string{"operator"})
-		assert.NoError(t, err)
-	})
-	assert.Contains(t, out, "Skill: operator")
-	assert.Contains(t, out, "Prompt template")
-}
-
-func TestRunAISkillRun_Custom(t *testing.T) {
-	dir := realPath(t, t.TempDir())
-	setupWorkspace(t, dir)
-	chdirClean(t, dir)
-
-	out := captureStdout(t, func() {
-		err := runAISkillRun(aiSkillRunCmd, []string{"operator"})
-		assert.NoError(t, err)
-	})
-	assert.Contains(t, out, "Running: operator")
-}
-
-func TestRunAIDiagnose_NoLogs(t *testing.T) {
-	dir := realPath(t, t.TempDir())
-	setupWorkspaceWithPackages(t, dir)
-	chdirClean(t, dir)
-
-	out := captureStdout(t, func() {
-		err := runAIDiagnose(aiDiagnoseCmd, []string{"svc-a"})
-		assert.NoError(t, err)
-	})
-	assert.Contains(t, out, "No log file found")
-}
-
-// ---------------------------------------------------------------------------
 // initPackageInDir — already exists
 // ---------------------------------------------------------------------------
 
@@ -2641,16 +2215,6 @@ func TestRunEnvClean_NoEnvs(t *testing.T) {
 		assert.NoError(t, err)
 	})
 	assert.Contains(t, out, "No environments to clean")
-}
-
-func TestEnvStatus_PackageNotFound(t *testing.T) {
-	dir := realPath(t, t.TempDir())
-	setupWorkspace(t, dir)
-	chdirClean(t, dir)
-
-	ws, err := loadWorkspace()
-	require.NoError(t, err)
-	assert.Equal(t, "no runtime defined", envStatus(ws, "nonexistent"))
 }
 
 // ---------------------------------------------------------------------------
@@ -2800,25 +2364,6 @@ func TestRepoNameFromURL_SSHWithPath(t *testing.T) {
 func TestRepoNameFromURL_SSHNoSlash(t *testing.T) {
 	// git@host:myrepo.git → no "/", so colon handling gives "myrepo"
 	assert.Equal(t, "myrepo", repoNameFromURL("git@host:myrepo.git"))
-}
-
-func TestRunAIContext_WithUnknownAgent(t *testing.T) {
-	dir := realPath(t, t.TempDir())
-	setupWorkspace(t, dir)
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, ".takumi"), 0755))
-
-	ws, err := workspace.Load(dir)
-	require.NoError(t, err)
-	ws.Config.Workspace.AI.Agent = "nonexistent-agent"
-	require.NoError(t, config.SaveWorkspaceConfig(filepath.Join(dir, "takumi.yaml"), ws.Config))
-
-	chdirClean(t, dir)
-
-	out := captureStdout(t, func() {
-		err := runAIContext(aiContextCmd, nil)
-		assert.NoError(t, err) // agent nil → skipped, no error
-	})
-	assert.Contains(t, out, "Regenerated AI context")
 }
 
 // ---------------------------------------------------------------------------
@@ -3449,22 +2994,6 @@ func TestRunRemove_DeleteAbsPath(t *testing.T) {
 	assert.Contains(t, out, "Deleted")
 }
 
-// ---------------------------------------------------------------------------
-// runAIOptimize — graph output with multiple levels
-// ---------------------------------------------------------------------------
-
-func TestRunAIOptimize_GraphLevels(t *testing.T) {
-	dir := realPath(t, t.TempDir())
-	setupWorkspaceWithPackages(t, dir) // has svc-b depends on svc-a
-	chdirClean(t, dir)
-
-	out := captureStdout(t, func() {
-		err := runAIOptimize(aiOptimizeCmd, nil)
-		assert.NoError(t, err)
-	})
-	assert.Contains(t, out, "Optimization Prompt")
-	assert.Contains(t, out, "Level")
-}
 func TestAgentByName_NotFound(t *testing.T) {
 	assert.Nil(t, AgentByName("nonexistent"))
 }
@@ -3581,24 +3110,6 @@ func TestRunCheckout_RelativePathFlag(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// gitDiffOutput
-// ---------------------------------------------------------------------------
-
-func TestGitDiffOutput_NoGitRepo(t *testing.T) {
-	dir := realPath(t, t.TempDir())
-	result := gitDiffOutput(dir)
-	assert.Contains(t, result, "unavailable")
-}
-
-func TestGitDiffOutput_ValidRepo(t *testing.T) {
-	dir := realPath(t, t.TempDir())
-	setupGitWorkspace(t, dir)
-	result := gitDiffOutput(dir)
-	// Empty diff since we just committed
-	assert.Equal(t, "", result)
-}
-
-// ---------------------------------------------------------------------------
 // detectGitBranch
 // ---------------------------------------------------------------------------
 
@@ -3686,8 +3197,8 @@ func TestGenCommandIndex_NestedSubcommands(t *testing.T) {
 	var buf strings.Builder
 	genCommandIndex(&buf, rootCmd, "")
 	result := buf.String()
-	// Should contain nested commands like "takumi ai context"
-	assert.Contains(t, result, "context")
+	// Should contain nested commands like "takumi docs generate"
+	assert.Contains(t, result, "generate")
 	assert.Contains(t, result, "build")
 }
 

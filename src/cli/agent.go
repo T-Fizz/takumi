@@ -24,6 +24,7 @@ var SupportedAgents = []AgentType{
 	{Name: "copilot", Label: "GitHub Copilot", FilePath: ".github/copilot-instructions.md"},
 	{Name: "windsurf", Label: "Windsurf", FilePath: ".windsurfrules"},
 	{Name: "cline", Label: "Cline", FilePath: ".clinerules"},
+	{Name: "kiro", Label: "Kiro", FilePath: "AGENTS.md"},
 	{Name: "none", Label: "Skip (no AI agent)", FilePath: ""},
 }
 
@@ -124,9 +125,8 @@ You are working in a Takumi workspace — an AI-aware, language-agnostic package
 | takumi affected | List packages affected by changes (scope your work before building) |
 | takumi graph | Dependency DAG with topological levels (not grep for imports) |
 | takumi validate | Check all configs for errors and cycles (run after editing configs) |
-| takumi env setup | Install dependencies and set up isolated runtime environments (for packages with a runtime section — typically Python, Node, Ruby, etc.) |
-| takumi ai diagnose | Auto-triage a build/test failure (not cat .takumi/logs/...) |
-| takumi ai context | Regenerate AI context after config changes |
+| takumi env setup | Install dependencies and set up isolated runtime environments |
+| takumi review | Run AI code review of workspace changes |
 | takumi init | Scaffold a new workspace or package config |
 
 ## Workflow
@@ -135,17 +135,16 @@ You are working in a Takumi workspace — an AI-aware, language-agnostic package
 2. `+"`takumi affected --since main`"+` — scope what changed
 3. `+"`takumi build --affected`"+` — build only what changed
 4. `+"`takumi test --affected`"+` — test only what changed
-5. On failure → `+"`takumi ai diagnose <pkg>`"+` → read output → fix → repeat from 3
+5. On failure → read logs in .takumi/logs/ → fix → repeat from 3
 
 ## When NOT to use raw commands
 
 - See go.mod/package.json/pytest.ini? Use takumi build / takumi test, not language tools
 - Need to deploy? Use takumi run deploy, not fly deploy / vercel deploy
 - Need to lint? Use takumi run lint, not eslint / ruff
-- Build failed? Use takumi ai diagnose, not cat .takumi/logs/...
 - Need to install dependencies for an interpreted language (Python, Node, Ruby)? Edit the manifest, then takumi env setup to sync into the managed env. Prefer this over raw pip install / npm install
 - New source directory? Create a takumi-pkg.yaml before building, or run takumi init
-- Changed a config? Run takumi validate to check, then takumi ai context to update AI context
+- Changed a config? Run takumi validate to check for errors
 - Adding a dependency between packages? Add to dependencies in takumi-pkg.yaml, verify with takumi validate
 
 ## When raw tools ARE appropriate

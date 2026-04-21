@@ -34,6 +34,16 @@ providers:
     config:
       timeoutMs: 300000
 
+  - id: exec:bash run-scenario.sh agent-setup
+    label: agent-setup
+    config:
+      timeoutMs: 300000
+
+  - id: exec:bash run-scenario.sh mid-session
+    label: mid-session
+    config:
+      timeoutMs: 300000
+
 prompts:
   - "{{scenario}}"
 
@@ -230,7 +240,7 @@ tests:
       - type: contains
         value: "found: takumi affected"
       - type: contains
-        value: "found: takumi ai diagnose"
+        value: "found: takumi review"
 
   - description: "agent-discovery: agent can build and test polyglot project"
     vars:
@@ -263,6 +273,154 @@ tests:
         value: "STEP 13"
       - type: contains
         value: "cascade"
+
+  # ─── Agent Setup (all supported agents) ──────────────────────────────────────
+
+  - description: "agent-setup: all steps pass"
+    vars:
+      scenario: agent-setup
+    providers: [agent-setup]
+    assert:
+      - type: contains
+        value: "ALL PASSED"
+
+  - description: "agent-setup: every agent gets correct config file"
+    vars:
+      scenario: agent-setup
+    providers: [agent-setup]
+    assert:
+      - type: contains
+        value: "CLAUDE.md exists with include line"
+      - type: contains
+        value: ".cursor/rules exists with include line"
+      - type: contains
+        value: "copilot-instructions.md exists with include line"
+      - type: contains
+        value: ".windsurfrules exists with include line"
+      - type: contains
+        value: ".clinerules exists with include line"
+      - type: contains
+        value: "AGENTS.md exists with include line"
+
+  - description: "agent-setup: 'none' skips agent file but creates TAKUMI.md"
+    vars:
+      scenario: agent-setup
+    providers: [agent-setup]
+    assert:
+      - type: contains
+        value: "No agent config file"
+      - type: contains
+        value: "TAKUMI.md exists"
+
+  - description: "agent-setup: TAKUMI.md structure is identical across all agents"
+    vars:
+      scenario: agent-setup
+    providers: [agent-setup]
+    assert:
+      - type: contains
+        value: "identical TAKUMI.md content"
+
+  - description: "agent-setup: existing config preserved on re-init"
+    vars:
+      scenario: agent-setup
+    providers: [agent-setup]
+    assert:
+      - type: contains
+        value: "Original content preserved"
+
+  # ─── Mid-Session Workflows ─────────────────────────────────────────────────────
+
+  - description: "mid-session: all steps pass"
+    vars:
+      scenario: mid-session
+    providers: [mid-session]
+    assert:
+      - type: contains
+        value: "ALL PASSED"
+
+  - description: "mid-session: affected shows full cascade (lib→api→web)"
+    vars:
+      scenario: mid-session
+    providers: [mid-session]
+    assert:
+      - type: contains
+        value: "STEP 2"
+      - type: contains
+        value: "Cascade detected"
+      - type: contains
+        value: "all 3 affected"
+
+  - description: "mid-session: scoped build and test pass"
+    vars:
+      scenario: mid-session
+    providers: [mid-session]
+    assert:
+      - type: contains
+        value: "STEP 3"
+      - type: contains
+        value: "3 passed"
+
+  - description: "mid-session: caching works after commit"
+    vars:
+      scenario: mid-session
+    providers: [mid-session]
+    assert:
+      - type: contains
+        value: "STEP 5"
+      - type: contains
+        value: "cached"
+
+  - description: "mid-session: build failure is visible to agent"
+    vars:
+      scenario: mid-session
+    providers: [mid-session]
+    assert:
+      - type: contains
+        value: "STEP 7"
+      - type: contains
+        value: "reports failure"
+
+  - description: "mid-session: agent fixes error and rebuild succeeds"
+    vars:
+      scenario: mid-session
+    providers: [mid-session]
+    assert:
+      - type: contains
+        value: "STEP 9"
+      - type: contains
+        value: "Build succeeds after fix"
+
+  - description: "mid-session: new package validates and appears in graph"
+    vars:
+      scenario: mid-session
+    providers: [mid-session]
+    assert:
+      - type: contains
+        value: "STEP 11"
+      - type: contains
+        value: "no cycles"
+      - type: contains
+        value: "4 packages"
+
+  - description: "mid-session: custom phases (lint, deploy) work"
+    vars:
+      scenario: mid-session
+    providers: [mid-session]
+    assert:
+      - type: contains
+        value: "STEP 14"
+      - type: contains
+        value: "STEP 15"
+
+  - description: "mid-session: status shows all packages at end"
+    vars:
+      scenario: mid-session
+    providers: [mid-session]
+    assert:
+      - type: contains
+        value: "STEP 16"
+      - type: contains
+        value: "all 4 packages"
 
   # ─── Cross-scenario: documentation is language-agnostic ─────────────────────
 
