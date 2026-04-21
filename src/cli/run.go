@@ -13,9 +13,12 @@ func init() {
 
 var runCmd = &cobra.Command{
 	Use:   "run <phase> [packages...]",
-	Short: "Run any named phase for packages",
+	Short: "Run any named phase (alias — you can also use 'takumi <phase>' directly)",
 	Long: `Run an arbitrary phase (e.g., lint, deploy) for one or more packages.
-If no packages are specified, runs the phase for all packages that define it.`,
+If no packages are specified, runs the phase for all packages that define it.
+
+Note: phases defined in your workspace are also available as top-level commands.
+For example, 'takumi deploy' is equivalent to 'takumi run deploy'.`,
 	Args: cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		phase := args[0]

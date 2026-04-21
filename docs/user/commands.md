@@ -35,7 +35,7 @@ Individual command pages are in [commands/](commands/).
 - [`takumi mcp serve`](commands/takumi_mcp_serve.md) — Start MCP server over stdio
 - [`takumi remove`](commands/takumi_remove.md) — Remove a package from the workspace
 - [`takumi review`](commands/takumi_review.md) — Run a thorough code review of all workspace changes
-- [`takumi run`](commands/takumi_run.md) — Run any named phase for packages
+- [`takumi run`](commands/takumi_run.md) — Run any named phase (alias — phases are also top-level commands)
 - [`takumi status`](commands/takumi_status.md) — Show workspace health dashboard
 - [`takumi sync`](commands/takumi_sync.md) — Pull or clone all tracked sources
 - [`takumi test`](commands/takumi_test.md) — Run test phase for packages

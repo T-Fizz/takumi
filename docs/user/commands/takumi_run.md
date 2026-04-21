@@ -1,11 +1,14 @@
 ## takumi run
 
-Run any named phase for packages
+Run any named phase (alias — you can also use `takumi <phase>` directly)
 
 ### Synopsis
 
 Run an arbitrary phase (e.g., lint, deploy) for one or more packages.
 If no packages are specified, runs the phase for all packages that define it.
+
+Note: phases defined in your workspace are also available as top-level commands.
+For example, `takumi deploy` is equivalent to `takumi run deploy`.
 
 ```
 takumi run <phase> [packages...] [flags]

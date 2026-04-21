@@ -234,9 +234,9 @@ tests:
           An agent should be able to read ONLY .takumi/TAKUMI.md and know:
           - How to build (takumi build, not raw commands)
           - How to test (takumi test)
-          - How to run custom phases (takumi run <phase>)
+          - How to run any phase as a top-level command (takumi deploy, takumi lint, etc.)
           - How to check what changed (takumi affected)
-          - How to diagnose failures (takumi ai diagnose)
+          - How to review code (takumi review)
           - How to manage environments (takumi env setup)
           - How to validate config (takumi validate)
 

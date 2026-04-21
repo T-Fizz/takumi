@@ -29,7 +29,7 @@ and generates an operator prompt that teaches AI agents how to use the workspace
 * [takumi mcp](takumi_mcp.md)	 - Model Context Protocol integration
 * [takumi remove](takumi_remove.md)	 - Remove a package from the workspace
 * [takumi review](takumi_review.md)	 - Run a thorough code review of all workspace changes
-* [takumi run](takumi_run.md)	 - Run any named phase for packages
+* [takumi run](takumi_run.md)	 - Run any named phase (alias — phases are also top-level commands)
 * [takumi status](takumi_status.md)	 - Show workspace health dashboard
 * [takumi sync](takumi_sync.md)	 - Pull or clone all tracked sources
 * [takumi test](takumi_test.md)	 - Run test phase for packages
