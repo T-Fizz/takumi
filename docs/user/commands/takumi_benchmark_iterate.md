@@ -5,7 +5,7 @@ Run iterative setup benchmark and track improvements over time
 ### Synopsis
 
 Tests how efficiently an AI agent can set up a freshly-cloned Takumi project.
-Run after improving README, operator skill, or TAKUMI.md, then compare metrics
+Run after improving README or TAKUMI.md, then compare metrics
 across iterations. Results are appended to history.json for trend tracking.
 
 ```

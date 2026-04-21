@@ -64,9 +64,9 @@ make test-all
 
 There are two promptfoo config files:
 
-**`promptfooconfig.yaml`** — 18 deterministic test cases across 10 providers. Uses `contains` and `regex` assertions to check that CLI output includes expected strings.
+**`promptfooconfig.yaml`** — 33 deterministic test cases across 5 providers (status, graph, validate, dry-run, operator). Uses `contains` and `regex` assertions to check CLI output and operator prompt content.
 
-**`promptfooconfig.llm.yaml`** — 9 LLM-graded test cases. Uses Claude Haiku (`anthropic:messages:claude-haiku-4-5-20251001`) to evaluate whether rendered prompts are useful to an AI agent. Each test uses an `llm-rubric` assertion with a qualitative description of what good output looks like.
+**`promptfooconfig.llm.yaml`** — 18 LLM-graded test cases. Uses Claude Haiku (`anthropic:messages:claude-haiku-4-5-20251001`) to evaluate prompt quality, CLI output parseability, and whether the operator prompt steers agents to correct Takumi workflows. Each test uses an `llm-rubric` assertion with a scenario-based rubric.
 
 ### Exec Provider
 
@@ -92,17 +92,17 @@ Example:
 
 ```yaml
 providers:
-  - id: exec:./run-skill.sh takumi ai diagnose api
-    label: diagnose
+  - id: exec:bash run-skill.sh status
+    label: status
 
 tests:
-  - vars:
-      provider_id: diagnose
+  - description: "status: shows workspace name"
+    vars:
+      test_name: status-name
+    providers: [status]
     assert:
       - type: contains
-        value: "Package: api"
-      - type: contains
-        value: "Root cause category"
+        value: "sample-platform"
 ```
 
 ## E2E Simulation Tests

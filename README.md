@@ -1,28 +1,33 @@
 # 匠 Takumi
 
-An AI-aware, language-agnostic package builder.
+An AI-aware, language-agnostic workspace builder.
 
-Takumi runs user-defined shell commands, manages optional per-package runtime environments, builds a dependency DAG for parallel execution, and ships with an AI skills system that teaches AI assistants how to operate your workspace.
+Takumi runs user-defined shell commands, manages optional per-package runtime environments, builds a dependency DAG for parallel execution, and generates an operator prompt (`.takumi/TAKUMI.md`) that teaches AI agents how to use your workspace correctly.
 
-## Quick Start
+## Install
+
+Download a prebuilt binary from [Releases](https://github.com/T-Fizz/takumi/releases), or build from source:
 
 ```bash
-# Install
 go install github.com/tfitz/takumi@latest
-
-# Create a new project
-takumi init --root my-project
-cd my-project
-
-# Or initialize in an existing directory
-cd existing-project
-takumi init
 ```
 
 Add a short alias to your shell profile (`~/.bashrc`, `~/.zshrc`):
 
 ```bash
 alias t='takumi'
+```
+
+## Quick Start
+
+```bash
+# Create a new project (picks your AI agent interactively)
+takumi init --root my-project
+cd my-project
+
+# Or initialize in an existing directory
+cd existing-project
+takumi init
 ```
 
 Edit `takumi-pkg.yaml` with your build commands, then:
@@ -43,63 +48,121 @@ Unchanged packages are automatically skipped via content-addressed caching.
 - **Content-addressed caching** — SHA-256 of source files + config + dependency keys; incremental builds
 - **Runtime isolation** — optional per-package environments (virtualenv, nvm, etc.) with `{{env_dir}}` substitution
 - **MCP server** — Model Context Protocol server for direct AI agent integration (`takumi mcp serve`)
-- **AI skills** — prompt templates for Claude, Cursor, Copilot, Windsurf, and Cline
+- **Multi-agent support** — operator prompt works with Claude, Cursor, Copilot, Windsurf, Cline, and Kiro
 - **Source tracking** — clone and sync external git repositories into the workspace
 - **Version pinning** — centralized dependency version sets with configurable strategies
-- **LLM code review** — `takumi review` runs a thorough code review via any supported LLM, outputs structured markdown
-- **Performance benchmarks** — measure agent token/turn efficiency with and without Takumi, track improvements over iterations
+- **LLM code review** — `takumi review` runs code review via Anthropic or OpenAI, outputs structured markdown
 
-## Concepts
+## The Operator Prompt
 
-**Workspace** — A directory containing `.takumi/` and a `takumi.yaml`. Holds one or more packages.
+During `takumi init`, Takumi generates `.takumi/TAKUMI.md` — a workspace-specific instruction set that teaches AI agents:
 
-**Package** — A directory with a `takumi-pkg.yaml`. Declares dependencies and defines build phases.
+- Which commands to use (`takumi build`, not `go build`)
+- The recommended workflow (status → affected → build → test)
+- When raw tools are appropriate (REPLs, git, no workspace yet)
+- How to handle failures (read logs → fix → rebuild)
+- Environment management (edit manifest → `takumi env setup`)
 
-**Phase** — A named set of commands (`pre` → `commands` → `post`). Any name works.
+This is a static file, not a running service. Any AI agent that reads it gets the same guidance.
 
-**Skill** — A prompt template that collects workspace context and generates structured output for AI assistants.
+## AI Agent Setup
+
+Pass `--agent <name>` during init (or pick interactively). Takumi creates the agent's config file with a pointer to `.takumi/TAKUMI.md`:
+
+| Agent | Config File | Flag |
+|-------|-------------|------|
+| Claude Code | `CLAUDE.md` | `--agent claude` |
+| Cursor | `.cursor/rules` | `--agent cursor` |
+| GitHub Copilot | `.github/copilot-instructions.md` | `--agent copilot` |
+| Windsurf | `.windsurfrules` | `--agent windsurf` |
+| Cline | `.clinerules` | `--agent cline` |
+| Kiro | `AGENTS.md` | `--agent kiro` |
+
+All agents get the same operator prompt content. If a config file already exists, Takumi appends the include line without overwriting your existing rules.
+
+## MCP Server
+
+For agents that support the Model Context Protocol (MCP), Takumi exposes workspace operations as tools — no copy-paste needed.
+
+```bash
+# Register globally for all Claude Code sessions
+takumi mcp install
+
+# Or add .mcp.json to your project root for per-project setup
+```
+
+```json
+{
+  "mcpServers": {
+    "takumi": {
+      "command": "takumi",
+      "args": ["mcp", "serve"]
+    }
+  }
+}
+```
+
+Available tools: `takumi_status`, `takumi_build`, `takumi_test`, `takumi_affected`, `takumi_validate`, `takumi_graph`. Build/test output goes to log files — tool results return summaries and paths to keep token usage low.
+
+## Workflow
+
+```bash
+t status                      # 1. Understand workspace state
+t affected --since main       # 2. Scope what changed
+t build --affected            # 3. Build only what changed
+t test --affected             # 4. Test only what changed
+# On failure → read .takumi/logs/ → fix → repeat from 3
+```
+
+## Multi-Package Example
+
+```yaml
+# lib/takumi-pkg.yaml
+package:
+  name: lib
+  version: 1.0.0
+phases:
+  build:
+    commands:
+      - go build ./...
+
+# api/takumi-pkg.yaml
+package:
+  name: api
+  version: 2.0.0
+dependencies:
+  - lib
+phases:
+  build:
+    commands:
+      - go build -o ../../build/api .
+  deploy:
+    commands:
+      - fly deploy
+```
+
+```bash
+t graph                       # See dependency order
+t build                       # lib builds first, then api
+t run deploy                  # Run custom phases
+t env setup                   # Set up runtime environments
+```
 
 ## Documentation
 
 ### User Guides
 
 - [Getting Started](docs/user/getting-started.md) — installation, new project setup
-- [Onboarding an Existing Project](docs/user/onboarding-existing-project.md) — step-by-step guide for existing code
+- [Onboarding an Existing Project](docs/user/onboarding-existing-project.md) — add Takumi to existing code
 - [Commands Reference](docs/user/commands.md) — every command and flag
 - [Configuration Reference](docs/user/configuration.md) — all three config file formats
-- [AI Skills](docs/user/ai-skills.md) — built-in skills, custom skills, workflow
 
 ### Developer Docs
 
 - [Architecture](docs/dev/architecture.md) — package structure, data flow, design decisions
 - [Package Reference](docs/dev/packages.md) — Go package API reference
-- [Testing Guide](docs/dev/testing.md) — unit tests, integration tests, promptfoo setup
+- [Testing Guide](docs/dev/testing.md) — unit tests, integration tests, benchmarks
 - [Contributing](docs/dev/contributing.md) — build, test, code style
-
-## AI Agent Integration
-
-During `takumi init`, select your AI agent. Takumi creates the appropriate config file (`CLAUDE.md`, `.cursor/rules`, etc.) pointing to `.takumi/TAKUMI.md` — a workspace-aware instruction set.
-
-| Agent | Config File |
-|-------|-------------|
-| Claude | `CLAUDE.md` |
-| Cursor | `.cursor/rules` |
-| Copilot | `.github/copilot-instructions.md` |
-| Windsurf | `.windsurfrules` |
-| Cline | `.clinerules` |
-
-Six built-in skills: **operator**, **diagnose**, **review**, **optimize**, **onboard**, **doc-writer**. See [AI Skills](docs/user/ai-skills.md) for details.
-
-### MCP Server
-
-Takumi includes a Model Context Protocol (MCP) server that lets AI agents operate your workspace directly — no copy-paste needed.
-
-```bash
-takumi mcp install  # Register globally for all Claude Code sessions
-# or add .mcp.json to your project root for per-project setup
-```
-
-The server exposes 7 tools: `takumi_status`, `takumi_build`, `takumi_test`, `takumi_diagnose`, `takumi_affected`, `takumi_validate`, `takumi_graph`. See [Commands Reference](docs/user/commands.md) for details.
 
 ## Building from Source
 
@@ -109,10 +172,10 @@ cd takumi
 make build          # → ./build/takumi
 make install        # → $GOPATH/bin/takumi
 make test           # Unit tests
-make test-all       # Unit + integration + LLM-graded tests
+make test-all       # Unit + integration tests
 ```
 
-Requires Go 1.26+.
+Requires Go 1.22+.
 
 ## License
 

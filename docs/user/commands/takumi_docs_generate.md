@@ -4,8 +4,7 @@ Regenerate docs from code and config
 
 ### Synopsis
 
-Extract documentation from Cobra commands, config structs, and skill definitions.
-Use --ai to also run the doc-writer skill for enhanced generation.
+Extract documentation from Cobra commands, config structs, and workspace state.
 
 ```
 takumi docs generate [flags]
@@ -14,7 +13,6 @@ takumi docs generate [flags]
 ### Options
 
 ```
-      --ai     Also run AI doc-writer skill
   -h, --help   help for generate
 ```
 

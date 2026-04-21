@@ -5,16 +5,6 @@ Auto-generated from CLI definitions via `cobra/doc`.
 Individual command pages are in [commands/](commands/).
 
 - [`takumi affected`](commands/takumi_affected.md) — List packages affected by recent changes
-- [`takumi ai context`](commands/takumi_ai_context.md) — Regenerate AI context and integrations
-- [`takumi ai diagnose`](commands/takumi_ai_diagnose.md) — Triage a build/test failure for a package
-- [`takumi ai help`](commands/takumi_ai_help.md) — Help about any command
-- [`takumi ai onboard`](commands/takumi_ai_onboard.md) — Generate a workspace briefing for new developers
-- [`takumi ai optimize`](commands/takumi_ai_optimize.md) — Analyze build performance and suggest improvements
-- [`takumi ai review`](commands/takumi_ai_review.md) — Summarize workspace changes for code review
-- [`takumi ai skill help`](commands/takumi_ai_skill_help.md) — Help about any command
-- [`takumi ai skill list`](commands/takumi_ai_skill_list.md) — List all available skills
-- [`takumi ai skill run`](commands/takumi_ai_skill_run.md) — Collect context, render skill template, and output
-- [`takumi ai skill show`](commands/takumi_ai_skill_show.md) — Print a skill's prompt template
 - [`takumi benchmark`](commands/takumi_benchmark.md) — Run performance benchmarks comparing agent work with and without Takumi
 - [`takumi benchmark help`](commands/takumi_benchmark_help.md) — Help about any command
 - [`takumi benchmark iterate`](commands/takumi_benchmark_iterate.md) — Run iterative setup benchmark and track improvements over time

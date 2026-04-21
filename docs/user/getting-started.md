@@ -50,7 +50,7 @@ my-project/
 └── takumi-pkg.yaml       # Root package config
 ```
 
-During init, Takumi asks which AI agent you use (Claude, Cursor, Copilot, Windsurf, Cline) and creates the appropriate config file. Pass `--agent claude` to skip the prompt.
+During init, Takumi asks which AI agent you use (Claude, Cursor, Copilot, Windsurf, Cline, Kiro) and creates the appropriate config file. Pass `--agent claude` to skip the prompt.
 
 ## Edit Your Package Config
 
@@ -94,11 +94,11 @@ If you use Claude Code, Takumi can be operated directly by the AI agent via the 
 }
 ```
 
-Once configured, Claude Code can call `takumi_build`, `takumi_test`, `takumi_diagnose`, and other tools directly. See [Commands Reference](commands.md#mcp-server) for the full tool list.
+Once configured, Claude Code can call `takumi_build`, `takumi_test`, `takumi_affected`, and other tools directly. See [Commands Reference](commands.md) for the full tool list.
 
 ## Next Steps
 
 - [Onboarding an Existing Project](onboarding-existing-project.md) — add Takumi to code you already have
 - [Commands Reference](commands.md) — every command and flag
 - [Configuration Reference](configuration.md) — all three config file formats
-- [AI Skills](ai-skills.md) — using AI-powered workspace tools and MCP integration
+- [AI Agent Setup](ai-agent-setup.md) — supported agents and MCP integration

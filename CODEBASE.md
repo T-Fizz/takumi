@@ -26,8 +26,8 @@ src/cli/                     Cobra command tree + TUI glue
   ├── remove.go              `takumi remove <pkg>` — deregister + cleanup
   ├── validate.go            `takumi validate` — structural + cross-validation
   ├── versionset.go          `takumi version-set check` — pinned dep report
-  ├── ai.go                  `takumi ai *` — skill context/diagnose/review/optimize/onboard
   ├── agent.go               AI agent selection (interactive + flag) + config
+  ├── review.go              `takumi review` — LLM-powered code review
   ├── mcp.go                 `takumi mcp serve` — start MCP server
   └── docs.go                `takumi docs generate/hook` — auto-doc generation
                               │
@@ -49,13 +49,9 @@ src/executor/                Phase execution engine
 src/cache/                   Content-addressed build caching
   └── cache.go               ComputeKey(), Store (Lookup/Write/Clean)
                               │
-src/skills/                  AI skill template system
-  ├── skills.go              LoadBuiltins(), LoadFromDir(), Render()
-  └── builtin/*.yaml         6 embedded skill YAML files
-                              │
 src/mcp/                     MCP (Model Context Protocol) server
   ├── server.go              NewServer() — creates and configures MCPServer
-  └── tools.go               7 tool definitions + handlers
+  └── tools.go               6 tool definitions + handlers
                               │
 src/ui/                      Terminal styling (charmbracelet)
   ├── styles.go              Colors, text styles, helper renderers
@@ -72,15 +68,6 @@ CLI flags → loadWorkspace() → buildGraph() → graph.Sort()
       → on success → cache.Store.Write()
   → executor.RecordMetrics() (non-cached only)
   → print summary (passed/failed/cached/skipped)
-```
-
-### Data Flow: `takumi ai diagnose <pkg>`
-
-```
-CLI args → loadWorkspace() → read .takumi/logs/<pkg>.<phase>.log
-  → findSkill("diagnose") from embedded YAML
-  → collect context: git diff, dependency chain, env status
-  → skills.Render(template, vars) → print rendered prompt
 ```
 
 ---
@@ -198,7 +185,7 @@ type Finding struct {
 | `DefaultPackageConfig(name string)` | Package name | `*PackageConfig` | Returns config with name, version "0.1.0", build+test phases with echo placeholders. |
 | `(c *PackageConfig) Marshal()` | — | `([]byte, error)` | Serializes to YAML bytes. |
 | `LoadVersionSetConfig(path string)` | File path to takumi-versions.yaml | `(*VersionSetConfig, error)` | Reads + YAML-parses version-set config. |
-| `ValidateWorkspace(cfg *WorkspaceConfig)` | Parsed workspace config | `[]Finding` | Checks: empty name → error; invalid AI agent → error; source missing URL → error; source missing path → warning. Valid agents: claude, cursor, copilot, windsurf, cline, none. |
+| `ValidateWorkspace(cfg *WorkspaceConfig)` | Parsed workspace config | `[]Finding` | Checks: empty name → error; invalid AI agent → error; source missing URL → error; source missing path → warning. Valid agents: claude, cursor, copilot, windsurf, cline, kiro, none. |
 | `ValidatePackage(cfg *PackageConfig)` | Parsed package config | `[]Finding` | Checks: empty name → error; empty/invalid semver version → warning; null phase → error; empty commands → warning; runtime with no setup → warning. Semver regex: `^\d+\.\d+\.\d+(-[a-zA-Z0-9.]+)?$` |
 | `ValidateVersionSet(cfg *VersionSetConfig)` | Parsed version-set config | `[]Finding` | Checks: empty name → warning; invalid strategy → error; empty packages → warning. Valid strategies: strict, prefer-latest, prefer-pinned. |
 | `(f Finding) String()` | — | `string` | Formats as `"error: field — message"` or `"warning: message"`. Omits field if empty. |
@@ -389,54 +376,6 @@ Keys are computed in topological order so dependency changes cascade.
 
 ---
 
-## Package: `skills` — AI Skill Templates
-
-### Types
-
-```go
-type Skill struct {
-    Name         string   `yaml:"name"`
-    Description  string   `yaml:"description"`
-    AutoContext  []string `yaml:"auto_context,omitempty"`
-    Prompt       string   `yaml:"prompt"`
-    OutputFormat string   `yaml:"output_format,omitempty"`
-    MaxTokens    int      `yaml:"max_tokens,omitempty"`
-}
-
-type SkillFile struct {
-    Skill Skill `yaml:"skill"`
-}
-
-type Source int  // SourceBuiltin=0, SourceWorkspace=1, SourcePackage=2
-
-type LoadedSkill struct {
-    Skill
-    Source Source
-    Path   string  // empty for embedded
-}
-```
-
-### Functions
-
-| Function | Input | Output | Description |
-|----------|-------|--------|-------------|
-| `LoadBuiltins()` | — | `([]LoadedSkill, error)` | Reads all `.yaml` from `go:embed builtin/` FS. Parses each as SkillFile. All returned with `Source=SourceBuiltin`, `Path=""`. |
-| `LoadFromDir(dir string, source Source)` | Directory path, source tag | `([]LoadedSkill, error)` | Reads `.yaml` files from filesystem directory. Silently skips: dirs, non-YAML, unreadable files, invalid YAML, empty names. Returns nil (not error) for nonexistent directory. |
-| `Render(prompt string, vars map[string]string)` | Template string, variable map | `string` | Simple `{{key}}` → value substitution via `strings.ReplaceAll`. Unmatched placeholders left as-is. |
-
-### Built-in Skills (6 total)
-
-| Skill | Purpose |
-|-------|---------|
-| `operator` | Workspace operation instructions for AI assistants |
-| `diagnose` | Triage build/test failures — uses `{{package_name}}`, `{{error_output}}`, etc. |
-| `review` | Summarize workspace changes for code review |
-| `optimize` | Analyze build performance from metrics |
-| `onboard` | Generate workspace briefing for new developers |
-| `doc-writer` | Generate enhanced documentation |
-
----
-
 ## Package: `mcp` — MCP Server
 
 Exposes Takumi workspace operations as Model Context Protocol tools over stdio, enabling AI agents to operate the workspace directly.
@@ -445,16 +384,15 @@ Exposes Takumi workspace operations as Model Context Protocol tools over stdio, 
 
 | Function | Input | Output | Description |
 |----------|-------|--------|-------------|
-| `NewServer()` | — | `*server.MCPServer` | Creates MCP server ("takumi", "0.1.0"), registers all 7 tools, returns configured server. |
+| `NewServer()` | — | `*server.MCPServer` | Creates MCP server ("takumi", "1.0.0"), registers all 6 tools, returns configured server. |
 
-### Tools (7 total)
+### Tools (6 total)
 
 | Tool | Parameters | Description |
 |------|-----------|-------------|
 | `takumi_status` | — | Workspace health dashboard: packages, deps, phases, sources, recent builds, AI agent |
 | `takumi_build` | `packages?`, `affected?`, `no_cache?` | Build packages in dependency order. Supports affected-only and cache bypass. |
 | `takumi_test` | `packages?`, `affected?`, `no_cache?` | Run test phase. Same options as build. |
-| `takumi_diagnose` | `package` (required) | Read most recent build/test log for a package. Returns log contents for failure triage. |
 | `takumi_affected` | `since?` | List packages affected by file changes + transitive dependents. Default: working tree changes. |
 | `takumi_validate` | — | Validate all config files: structural checks, unresolved deps, cycle detection, version-set. |
 | `takumi_graph` | — | Return dependency graph with parallel level annotations. |
@@ -557,7 +495,7 @@ func initPackageInDir(targetDir, pkgName, wsRoot string, isSubdir bool) error
   // Creates takumi-pkg.yaml with DefaultPackageConfig. Errors if already exists.
 
 func initWorkspace(root, name string, agent *AgentType) error
-  // Creates: .takumi/ + subdirs (envs, logs, skills, skills/_builtin)
+  // Creates: .takumi/ + subdirs (envs, logs)
   // Writes: takumi.yaml, .takumi/TAKUMI.md, agent config file
 ```
 
@@ -565,12 +503,12 @@ func initWorkspace(root, name string, agent *AgentType) error
 
 ```go
 type AgentType struct {
-    Name     string  // "claude", "cursor", "copilot", "windsurf", "cline", "none"
+    Name     string  // "claude", "cursor", "copilot", "windsurf", "cline", "kiro", "none"
     Label    string  // Display name
     FilePath string  // Config file relative to workspace root
 }
 
-var SupportedAgents []AgentType  // 6 entries
+var SupportedAgents []AgentType  // 7 entries (6 agents + none)
 
 func AgentByName(name string) *AgentType      // Lookup by name, nil if not found
 func agentNames() string                       // "claude, cursor, copilot, ..."
@@ -690,37 +628,14 @@ func runVersionSetCheck(cmd, args) error
   // Loads version-set file, prints strategy + all pinned deps (sorted)
 ```
 
-### AI (`ai.go`)
-
-```go
-// Commands: ai context, ai diagnose <pkg>, ai review, ai optimize, ai onboard
-// Commands: ai skill list, ai skill show <name>, ai skill run <name>
-
-func runAIContext(cmd, args) error    // Regenerate .takumi/TAKUMI.md + agent config
-func runAIDiagnose(cmd, args) error   // Load log → render diagnose skill with context vars
-func runAIReview(cmd, args) error     // Git diff → render review skill
-func runAIOptimize(cmd, args) error   // Metrics + graph → render optimize skill
-func runAIOnboard(cmd, args) error    // All configs + graph → render onboard skill
-func runAISkillList(cmd, args) error  // List all skills with source labels
-func runAISkillShow(cmd, args) error  // Print skill template + metadata
-func runAISkillRun(cmd, args) error   // Render + print skill (delegates known skills)
-
-func loadAllSkills() ([]LoadedSkill, error)  // Currently just LoadBuiltins()
-func findSkill(name string) *LoadedSkill     // Linear search through all skills
-func envStatus(ws, pkgName string) string    // "no runtime defined" | "not set up" | "ready (path)"
-func gitDiffOutput(wsRoot string) string     // git diff output or "(git diff unavailable)"
-```
-
 ### Docs (`docs.go`)
 
 ```go
 func runDocsGenerate(cmd, args) error
-  // Generates 4 markdown files in docs/user/:
-  //   commands.md — from Cobra command tree
-  //   skills-reference.md — from built-in skills
+  // Generates markdown files in docs/user/:
+  //   commands.md + per-command pages — from Cobra command tree
   //   config-reference.md — annotated YAML schemas
-  //   packages.md — table from workspace scan
-  // Optional --ai flag runs doc-writer skill
+  //   packages.md — Go package API reference from source
 
 func writeCommandDocs(buf *strings.Builder, cmd *cobra.Command, prefix string)
   // Recursive Cobra tree walker, writes markdown for each runnable command
@@ -773,7 +688,6 @@ All dependencies are MIT or compatible licensed.
 | `executor` | 95.4% | 23 tests |
 | `graph` | 100% | |
 | `mcp` | 96.7% | 57+ unit tests + 3 E2E simulation tests |
-| `skills` | 100% | |
 | `ui` | 100% | |
 | `workspace` | 96.2% | |
 | **Total** | **~97%** | Remaining gaps are OS-level unreachable error paths |
@@ -784,5 +698,4 @@ All dependencies are MIT or compatible licensed.
 
 - **Source files:** 32 `.go` files (non-test)
 - **Test files:** 21 `_test.go` files
-- **Skill YAMLs:** 6 embedded templates
-- **Total Go LoC:** ~4,900 (source) + ~10,000 (tests)
+- **Total Go LoC:** ~4,400 (source) + ~9,000 (tests)
