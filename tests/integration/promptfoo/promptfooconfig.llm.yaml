@@ -173,7 +173,7 @@ tests:
           the agent not to use pytest/go test/vitest directly and to use
           takumi test instead.
 
-  - description: "scenario: agent wants to deploy → operator steers to takumi run deploy"
+  - description: "scenario: agent wants to deploy → operator steers to takumi deploy"
     vars:
       test_name: scenario-deploy
     providers: [operator]
@@ -183,11 +183,11 @@ tests:
           An AI agent needs to deploy the application. Given ONLY this operator
           prompt, would the agent:
           (a) Run `fly deploy` or `vercel deploy` directly, OR
-          (b) Run `takumi run deploy`
+          (b) Run `takumi deploy`
 
           The correct answer is (b). PASS only if the prompt explicitly mentions
-          `takumi run deploy` as the way to deploy, and explicitly says not to use
-          fly deploy / vercel deploy directly.
+          `takumi deploy` (or `takumi <phase>`) as the way to deploy, and explicitly
+          says not to use fly deploy / vercel deploy directly.
 
   # ─── Setup & Scaffolding scenarios ──────────────────────────────────
   - description: "scenario: new directory without config → operator steers to init"

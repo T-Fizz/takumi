@@ -16,7 +16,8 @@ src/cli/                     Cobra command tree + TUI glue
   ├── init.go                `takumi init` — scaffold workspace + package
   ├── build.go               `takumi build` — phase execution + dry-run + caching
   ├── test.go                `takumi test` — delegates to runPhaseCommand("test")
-  ├── run.go                 `takumi run <phase>` — arbitrary phase execution
+  ├── phase.go               Dynamic phase commands — any phase is a top-level command
+  ├── run.go                 `takumi run <phase>` — backward-compat alias
   ├── graph.go               `takumi graph` — dependency DAG display
   ├── status.go              `takumi status` — workspace health dashboard
   ├── affected.go            `takumi affected` — git-diff → package mapping
@@ -518,7 +519,7 @@ func writeTakumiMD(wsRoot, wsName string) error               // Writes .takumi/
 func takumiMDContent(wsName string) string                    // Returns TAKUMI.md template
 ```
 
-### Build / Test / Run (`build.go`, `test.go`, `run.go`)
+### Build / Test / Phase Commands (`build.go`, `test.go`, `phase.go`, `run.go`)
 
 ```go
 // build.go — Flags: --affected, --no-cache, --dry-run
@@ -540,9 +541,15 @@ func printCmdGroup(label string, cmds []string)
 // test.go — Flags: --affected, --no-cache, --dry-run
 // Delegates to runPhaseCommand(cmd, args, "test")
 
-// run.go — Flags: --affected, --no-cache, --dry-run
-// Args: phase is args[0], packages are args[1:]
-// Delegates to runPhaseCommand(cmd, args[1:], args[0])
+// phase.go — Dynamic phase registration
+func registerPhaseCommands()  // Called from Execute() before rootCmd.Execute()
+  // Loads workspace, discovers all phase names across packages,
+  // registers a top-level cobra.Command for each non-builtin phase.
+  // Enables `takumi deploy`, `takumi lint`, etc. without `takumi run`.
+
+func registerPhaseCmd(phase string)  // Creates one dynamic phase command
+
+// run.go — Backward-compat alias, delegates to runPhaseCommand
 ```
 
 ### Graph (`graph.go`)

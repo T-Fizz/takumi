@@ -119,15 +119,18 @@ You are working in a Takumi workspace — an AI-aware, language-agnostic package
 | Command | Purpose |
 |---------|---------|
 | takumi status | Workspace health dashboard (ALWAYS run first in a new session) |
-| takumi build | Build packages in dependency order (not go build, npm run build, etc.) |
-| takumi test | Run tests in dependency order (not pytest, go test, vitest, etc.) |
-| takumi run <phase> | Run any custom phase: deploy, lint, dev, etc. (not raw commands) |
+| takumi build [packages...] | Build packages in dependency order (not go build, npm run build, etc.) |
+| takumi test [packages...] | Run tests in dependency order (not pytest, go test, vitest, etc.) |
+| takumi <phase> [packages...] | Run ANY phase as a top-level command: deploy, lint, dev, etc. |
 | takumi affected | List packages affected by changes (scope your work before building) |
 | takumi graph | Dependency DAG with topological levels (not grep for imports) |
 | takumi validate | Check all configs for errors and cycles (run after editing configs) |
 | takumi env setup | Install dependencies and set up isolated runtime environments |
 | takumi review | Run AI code review of workspace changes |
 | takumi init | Scaffold a new workspace or package config |
+
+Every phase defined in any takumi-pkg.yaml is a top-level command. If a package defines a
+deploy phase, `+"`takumi deploy`"+` just works — no need for `+"`takumi run`"+`.
 
 ## Workflow
 
@@ -140,8 +143,8 @@ You are working in a Takumi workspace — an AI-aware, language-agnostic package
 ## When NOT to use raw commands
 
 - See go.mod/package.json/pytest.ini? Use takumi build / takumi test, not language tools
-- Need to deploy? Use takumi run deploy, not fly deploy / vercel deploy
-- Need to lint? Use takumi run lint, not eslint / ruff
+- Need to deploy? Use takumi deploy, not fly deploy / vercel deploy
+- Need to lint? Use takumi lint, not eslint / ruff
 - Need to install dependencies for an interpreted language (Python, Node, Ruby)? Edit the manifest, then takumi env setup to sync into the managed env. Prefer this over raw pip install / npm install
 - New source directory? Create a takumi-pkg.yaml before building, or run takumi init
 - Changed a config? Run takumi validate to check for errors

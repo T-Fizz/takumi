@@ -351,9 +351,9 @@ fi
 # PHASE 4: Custom Phases (lint, deploy)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-step 14 "Agent runs lint phase (operator: takumi run lint, not eslint/ruff)"
-echo "$ takumi run lint"
-OUTPUT=$("$TAKUMI_BIN" run lint 2>&1)
+step 14 "Agent runs lint phase (operator: takumi lint, not eslint/ruff)"
+echo "$ takumi lint"
+OUTPUT=$("$TAKUMI_BIN" lint 2>&1)
 echo "$OUTPUT"
 if echo "$OUTPUT" | grep -q "passed"; then
     echo "  Lint phase ran on packages that define it"
@@ -362,9 +362,9 @@ else
     fail "lint phase failed"
 fi
 
-step 15 "Agent runs deploy phase (operator: takumi run deploy, not fly/vercel)"
-echo "$ takumi run deploy"
-OUTPUT=$("$TAKUMI_BIN" run deploy 2>&1)
+step 15 "Agent runs deploy phase (operator: takumi deploy, not fly/vercel)"
+echo "$ takumi deploy"
+OUTPUT=$("$TAKUMI_BIN" deploy 2>&1)
 echo "$OUTPUT"
 if echo "$OUTPUT" | grep -q "passed" || echo "$OUTPUT" | grep -q "deploying"; then
     echo "  Deploy phase ran on api (only package with deploy)"

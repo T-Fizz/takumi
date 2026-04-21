@@ -6,16 +6,38 @@ Takumi runs user-defined shell commands, manages optional per-package runtime en
 
 ## Install
 
-Download a prebuilt binary from [Releases](https://github.com/T-Fizz/takumi/releases), or build from source:
+### Homebrew (macOS/Linux)
 
 ```bash
-go install github.com/tfitz/takumi@latest
+brew install T-Fizz/tap/takumi
 ```
 
-Add a short alias to your shell profile (`~/.bashrc`, `~/.zshrc`):
+### Shell installer (macOS/Linux)
 
 ```bash
-alias t='takumi'
+curl -fsSL https://raw.githubusercontent.com/T-Fizz/takumi/main/install.sh | sh
+```
+
+Installs to `/usr/local/bin` (or `~/.local/bin` if not writable). Override with `TAKUMI_INSTALL_DIR`:
+
+```bash
+TAKUMI_INSTALL_DIR=~/.bin curl -fsSL https://raw.githubusercontent.com/T-Fizz/takumi/main/install.sh | sh
+```
+
+### Manual download
+
+Grab a prebuilt binary from [Releases](https://github.com/T-Fizz/takumi/releases) and place it on your PATH.
+
+Both Homebrew and the shell installer create a `t` shorthand symlink automatically.
+
+### Uninstall
+
+```bash
+# Homebrew
+brew uninstall takumi
+
+# Shell installer
+curl -fsSL https://raw.githubusercontent.com/T-Fizz/takumi/main/uninstall.sh | sh
 ```
 
 ## Quick Start
@@ -144,7 +166,7 @@ phases:
 ```bash
 t graph                       # See dependency order
 t build                       # lib builds first, then api
-t run deploy                  # Run custom phases
+t deploy                      # Any phase is a top-level command
 t env setup                   # Set up runtime environments
 ```
 

@@ -152,17 +152,15 @@ tests:
       - type: regex
         value: "(not pytest|not.*go test|not.*vitest)"
 
-  - description: "operator: agent wants custom phase → told to use takumi run"
+  - description: "operator: agent wants custom phase → told to use takumi <phase> directly"
     vars:
       test_name: operator-run-phase
     providers: [operator]
     assert:
-      - type: contains
-        value: "takumi run"
+      - type: regex
+        value: "takumi (deploy|lint|<phase>)"
       - type: regex
         value: "(deploy|lint|dev)"
-      - type: contains
-        value: "not raw commands"
 
   # ─── Setup & Scaffolding ────────────────────────────────────────────
   - description: "operator: no config → told to create takumi-pkg.yaml or run init"
@@ -351,23 +349,23 @@ tests:
         value: "[Uu]ser.*explicit|[Uu]ser.*request.*raw|[Uu]ser.*specific.*raw"
 
   # ─── Lint & Deploy Phases ──────────────────────────────────────────
-  - description: "operator: lint → told to use takumi run lint not raw linter"
+  - description: "operator: lint → told to use takumi lint not raw linter"
     vars:
       test_name: operator-lint
     providers: [operator]
     assert:
       - type: contains
-        value: "takumi run lint"
+        value: "takumi lint"
       - type: regex
         value: "not.*eslint|not.*ruff"
 
-  - description: "operator: deploy → told to use takumi run deploy not raw deploy"
+  - description: "operator: deploy → told to use takumi deploy not raw deploy"
     vars:
       test_name: operator-deploy
     providers: [operator]
     assert:
       - type: contains
-        value: "takumi run deploy"
+        value: "takumi deploy"
       - type: regex
         value: "not.*fly deploy|not.*vercel deploy"
 

@@ -194,7 +194,7 @@ You are working in a Takumi workspace — an AI-aware, language-agnostic package
 - takumi status    — workspace dashboard (run first in a new session)
 - takumi build     — build packages in dependency order (not go build, npm run build, etc.)
 - takumi test      — test packages in dependency order (not pytest, go test, etc.)
-- takumi run PHASE — run any custom phase (deploy, lint, dev, etc.)
+- takumi PHASE     — any phase is a top-level command (deploy, lint, dev, etc.)
 - takumi affected  — list packages affected by changes (scope before building)
 - takumi graph     — dependency DAG with topological levels
 - takumi validate  — check configs for errors and cycles

@@ -31,7 +31,7 @@ If a config file already exists (e.g., you have custom rules in `CLAUDE.md`), Ta
 
 - **Command reference** — every Takumi command with a one-line description
 - **Workflow** — numbered steps: status → affected → build → test → fix
-- **When NOT to use raw commands** — guides agents to use `takumi build` instead of `go build`, `takumi run lint` instead of `eslint`, etc.
+- **When NOT to use raw commands** — guides agents to use `takumi build` instead of `go build`, `takumi lint` instead of `eslint`, etc.
 - **When raw tools ARE appropriate** — REPLs, git operations, user-explicit requests, pre-init state
 - **Config locations** — where to find `takumi.yaml`, `takumi-pkg.yaml`, etc.
 - **Rules** — never build with raw commands, use `takumi checkout` not `git clone`, check `takumi affected` before building

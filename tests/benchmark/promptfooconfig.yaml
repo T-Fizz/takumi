@@ -236,7 +236,7 @@ tests:
       - type: contains
         value: "found: takumi test"
       - type: contains
-        value: "found: takumi run"
+        value: "found: takumi <phase>"
       - type: contains
         value: "found: takumi affected"
       - type: contains

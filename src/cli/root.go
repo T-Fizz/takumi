@@ -29,6 +29,10 @@ var osExit = os.Exit
 
 // Execute runs the root command.
 func Execute() {
+	// Register dynamic phase commands (deploy, lint, etc.) before cobra
+	// parses args, so they show up in help and tab-completion.
+	registerPhaseCommands()
+
 	if err := rootCmd.Execute(); err != nil {
 		osExit(1)
 	}
