@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tfitz/takumi/src/executor"
+	"github.com/tfitz/takumi/src/workspace"
 )
 
 // ---------------------------------------------------------------------------
@@ -520,7 +521,7 @@ func TestMapFilesToPackages(t *testing.T) {
 
 	// Use the workspace-resolved path to avoid symlink mismatches on macOS
 	files := []string{filepath.Join(ws.Packages["lib"].Dir, "main.go")}
-	affected := mapFilesToPackages(ws, files)
+	affected := workspace.MapFilesToPackages(ws, files)
 	assert.True(t, affected["lib"])
 	assert.False(t, affected["api"])
 }
@@ -532,7 +533,7 @@ func TestMapFilesToPackages_RelativePaths(t *testing.T) {
 
 	// Relative paths (as git diff would return)
 	files := []string{"api/handler.go"}
-	affected := mapFilesToPackages(ws, files)
+	affected := workspace.MapFilesToPackages(ws, files)
 	assert.True(t, affected["api"])
 	assert.False(t, affected["lib"])
 }
@@ -543,7 +544,7 @@ func TestMapFilesToPackages_NoMatch(t *testing.T) {
 	require.NoError(t, err)
 
 	files := []string{"README.md"}
-	affected := mapFilesToPackages(ws, files)
+	affected := workspace.MapFilesToPackages(ws, files)
 	assert.Empty(t, affected)
 }
 
@@ -1046,13 +1047,13 @@ dependencies:
 
 func TestGitChangedFiles_NoRepo(t *testing.T) {
 	dir := t.TempDir()
-	_, err := gitChangedFiles(dir, "HEAD")
+	_, err := workspace.ChangedFiles(dir, "HEAD")
 	assert.Error(t, err)
 }
 
 func TestGitChangedFiles_CleanRepo(t *testing.T) {
 	dir := setupGitWorkspace(t)
-	files, err := gitChangedFiles(dir, "HEAD")
+	files, err := workspace.ChangedFiles(dir, "HEAD")
 	require.NoError(t, err)
 	assert.Empty(t, files)
 }
@@ -1061,7 +1062,7 @@ func TestGitChangedFiles_WithChanges(t *testing.T) {
 	dir := setupGitWorkspace(t)
 	os.WriteFile(filepath.Join(dir, "lib", "main.go"), []byte("package lib\n// changed\n"), 0644)
 
-	files, err := gitChangedFiles(dir, "HEAD")
+	files, err := workspace.ChangedFiles(dir, "HEAD")
 	require.NoError(t, err)
 	assert.Contains(t, files, "lib/main.go")
 }

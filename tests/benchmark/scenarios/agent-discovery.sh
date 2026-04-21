@@ -133,7 +133,7 @@ step 5 "Agent reads TAKUMI.md — should contain full command reference"
 echo "$ cat .takumi/TAKUMI.md (checking for key instructions)"
 CONTENT=$(cat .takumi/TAKUMI.md)
 FOUND_ALL=true
-for keyword in "takumi build" "takumi test" "takumi run" "takumi affected" "takumi graph" "takumi validate" "takumi ai diagnose" "takumi env setup" "takumi init"; do
+for keyword in "takumi build" "takumi test" "takumi run" "takumi affected" "takumi graph" "takumi validate" "takumi review" "takumi env setup" "takumi init"; do
     if echo "$CONTENT" | grep -q "$keyword"; then
         echo "  found: $keyword"
     else

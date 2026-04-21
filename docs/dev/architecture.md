@@ -12,16 +12,17 @@ cmd/
     main.go                    # Entry point — calls cli.Execute()
 
 src/
-  cli/                         # Cobra commands (25+ files, one per command group)
-  config/                      # YAML config parsing and validation
-  workspace/                   # Workspace detection, package discovery
-  graph/                       # Dependency DAG, topological sort
-  cache/                       # Content-addressed build cache
-  executor/                    # Phase execution, parallelism, logging
-  mcp/                         # MCP server (Model Context Protocol)
-  skills/                      # AI skill loading and rendering
-    builtin/                   # Embedded YAML skill templates
-  ui/                          # Terminal styling (lipgloss)
+  agent/                      # Multi-turn LLM agent loop (Anthropic, OpenAI)
+  cache/                      # Content-addressed build cache
+  cli/                        # Cobra commands (one per command group)
+  config/                     # YAML config parsing and validation
+  executor/                   # Phase execution, parallelism, logging
+  graph/                      # Dependency DAG, topological sort
+  mcp/                        # MCP server (Model Context Protocol)
+  skills/                     # AI skill loading and rendering
+    builtin/
+  ui/                         # Terminal styling (lipgloss)
+  workspace/                  # Workspace detection, package discovery, git utilities
 ```
 
 ## Package Responsibilities

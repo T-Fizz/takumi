@@ -11,7 +11,7 @@ Takumi runs user-defined shell commands, manages optional per-package runtime en
 go install github.com/tfitz/takumi@latest
 
 # Create a new project
-takumi init my-project
+takumi init --root my-project
 cd my-project
 
 # Or initialize in an existing directory
@@ -19,12 +19,18 @@ cd existing-project
 takumi init
 ```
 
+Add a short alias to your shell profile (`~/.bashrc`, `~/.zshrc`):
+
+```bash
+alias t='takumi'
+```
+
 Edit `takumi-pkg.yaml` with your build commands, then:
 
 ```bash
-takumi build                  # Build in dependency order
-takumi test                   # Run tests
-takumi status                 # Workspace dashboard
+t build                       # Build in dependency order
+t test                        # Run tests
+t status                      # Workspace dashboard
 ```
 
 Unchanged packages are automatically skipped via content-addressed caching.
@@ -40,6 +46,7 @@ Unchanged packages are automatically skipped via content-addressed caching.
 - **AI skills** — prompt templates for Claude, Cursor, Copilot, Windsurf, and Cline
 - **Source tracking** — clone and sync external git repositories into the workspace
 - **Version pinning** — centralized dependency version sets with configurable strategies
+- **LLM code review** — `takumi review` runs a thorough code review via any supported LLM, outputs structured markdown
 - **Performance benchmarks** — measure agent token/turn efficiency with and without Takumi, track improvements over iterations
 
 ## Concepts
@@ -88,15 +95,16 @@ Six built-in skills: **operator**, **diagnose**, **review**, **optimize**, **onb
 Takumi includes a Model Context Protocol (MCP) server that lets AI agents operate your workspace directly — no copy-paste needed.
 
 ```bash
-takumi mcp serve    # Start the MCP server over stdio
+takumi mcp install  # Register globally for all Claude Code sessions
+# or add .mcp.json to your project root for per-project setup
 ```
 
-The server exposes 7 tools: `takumi_status`, `takumi_build`, `takumi_test`, `takumi_diagnose`, `takumi_affected`, `takumi_validate`, `takumi_graph`. Add `.mcp.json` to your project root for automatic Claude Code integration. See [Commands Reference](docs/user/commands.md) for details.
+The server exposes 7 tools: `takumi_status`, `takumi_build`, `takumi_test`, `takumi_diagnose`, `takumi_affected`, `takumi_validate`, `takumi_graph`. See [Commands Reference](docs/user/commands.md) for details.
 
 ## Building from Source
 
 ```bash
-git clone https://github.com/tfitz/takumi.git
+git clone https://github.com/T-Fizz/takumi.git
 cd takumi
 make build          # → ./build/takumi
 make install        # → $GOPATH/bin/takumi

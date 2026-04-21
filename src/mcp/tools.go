@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -186,11 +185,11 @@ func handlePhase(_ context.Context, request gomcp.CallToolRequest, phase string)
 	}
 
 	if affectedFlag {
-		changedFiles, gerr := gitChangedFiles(ws.Root, "HEAD")
+		changedFiles, gerr := workspace.ChangedFiles(ws.Root, "HEAD")
 		if gerr != nil {
 			return gomcp.NewToolResultError("failed to determine affected packages: " + gerr.Error()), nil
 		}
-		affected := mapFilesToPackages(ws, changedFiles)
+		affected := workspace.MapFilesToPackages(ws, changedFiles)
 		g := newGraph(ws)
 		allAffected := make(map[string]bool)
 		for pkg := range affected {
@@ -377,7 +376,7 @@ func handleDiagnose(_ context.Context, request gomcp.CallToolRequest) (*gomcp.Ca
 		}
 	}
 
-	if files, gerr := gitChangedFiles(ws.Root, "HEAD"); gerr == nil && len(files) > 0 {
+	if files, gerr := workspace.ChangedFiles(ws.Root, "HEAD"); gerr == nil && len(files) > 0 {
 		fmt.Fprintf(&b, "\nChanged files:\n")
 		for _, f := range files {
 			fmt.Fprintf(&b, "  %s\n", f)
@@ -410,7 +409,7 @@ func handleAffected(_ context.Context, request gomcp.CallToolRequest) (*gomcp.Ca
 
 	since := request.GetString("since", "HEAD")
 
-	changedFiles, err := gitChangedFiles(ws.Root, since)
+	changedFiles, err := workspace.ChangedFiles(ws.Root, since)
 	if err != nil {
 		return gomcp.NewToolResultError("failed to get changed files: " + err.Error()), nil
 	}
@@ -419,7 +418,7 @@ func handleAffected(_ context.Context, request gomcp.CallToolRequest) (*gomcp.Ca
 		return gomcp.NewToolResultText(fmt.Sprintf("No changed files since %s.", since)), nil
 	}
 
-	direct := mapFilesToPackages(ws, changedFiles)
+	direct := workspace.MapFilesToPackages(ws, changedFiles)
 	g := newGraph(ws)
 	transitive := make(map[string]bool)
 	for pkg := range direct {
@@ -622,48 +621,6 @@ func sortedKeys(m map[string]bool) []string {
 	}
 	sort.Strings(keys)
 	return keys
-}
-
-func gitChangedFiles(wsRoot, since string) ([]string, error) {
-	cmd := exec.Command("git", "diff", "--name-only", since)
-	cmd.Dir = wsRoot
-	out, err := cmd.Output()
-	if err != nil {
-		// Fall back to working tree changes
-		cmd2 := exec.Command("git", "diff", "--name-only")
-		cmd2.Dir = wsRoot
-		out, err = cmd2.Output()
-		if err != nil {
-			return nil, err
-		}
-	}
-	var files []string
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		if line != "" {
-			files = append(files, line)
-		}
-	}
-	return files, nil
-}
-
-func mapFilesToPackages(ws *workspace.Info, files []string) map[string]bool {
-	affected := make(map[string]bool)
-	for _, file := range files {
-		absPath := file
-		if !filepath.IsAbs(file) {
-			absPath = filepath.Join(ws.Root, file)
-		}
-		for name, pkg := range ws.Packages {
-			rel, err := filepath.Rel(pkg.Dir, absPath)
-			if err != nil {
-				continue
-			}
-			if !strings.HasPrefix(rel, "..") {
-				affected[name] = true
-			}
-		}
-	}
-	return affected
 }
 
 func capitalize(s string) string {
