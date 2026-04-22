@@ -11,7 +11,10 @@ import (
 	"github.com/tfitz/takumi/src/workspace"
 )
 
+var graphPhases bool
+
 func init() {
+	graphCmd.Flags().BoolVar(&graphPhases, "phases", false, "Show phase commands for each package")
 	rootCmd.AddCommand(graphCmd)
 }
 
@@ -65,6 +68,23 @@ func runGraph(cmd *cobra.Command, args []string) error {
 				}
 			}
 			fmt.Println(line)
+
+			// Show phase commands when --phases flag is set
+			if graphPhases {
+				if wsPkg, ok := ws.Packages[pkg]; ok {
+					var phaseNames []string
+					for name := range wsPkg.Config.Phases {
+						phaseNames = append(phaseNames, name)
+					}
+					sort.Strings(phaseNames)
+					for _, name := range phaseNames {
+						phase := wsPkg.Config.Phases[name]
+						for _, c := range phase.Commands {
+							fmt.Println("      " + ui.Muted.Render(name+": "+c))
+						}
+					}
+				}
+			}
 		}
 		fmt.Println()
 	}

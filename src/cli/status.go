@@ -48,14 +48,18 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		for _, name := range names {
 			pkg := ws.Packages[name]
 			info := ui.Bold.Render(name) + " " + ui.Muted.Render("v"+pkg.Config.Package.Version)
-			deps := len(pkg.Config.Dependencies)
-			phases := len(pkg.Config.Phases)
 			var details []string
-			if deps > 0 {
-				details = append(details, ui.FormatCount(deps, "dep", "deps"))
+			if len(pkg.Config.Dependencies) > 0 {
+				details = append(details, "deps: "+joinParts(pkg.Config.Dependencies))
 			}
+			phases := len(pkg.Config.Phases)
 			if phases > 0 {
-				details = append(details, ui.FormatCount(phases, "phase", "phases"))
+				var phaseNames []string
+				for phaseName := range pkg.Config.Phases {
+					phaseNames = append(phaseNames, phaseName)
+				}
+				sort.Strings(phaseNames)
+				details = append(details, "phases: "+joinParts(phaseNames))
 			}
 			if pkg.Config.Runtime != nil {
 				details = append(details, "runtime")

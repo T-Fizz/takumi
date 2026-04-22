@@ -1397,8 +1397,8 @@ phases:
 	})
 	// Should show deps, phases, and runtime in the package info line
 	assert.Contains(t, out, "full-pkg")
-	assert.Contains(t, out, "1 dep")
-	assert.Contains(t, out, "2 phases")
+	assert.Contains(t, out, "deps: some-dep")
+	assert.Contains(t, out, "phases: build, test")
 	assert.Contains(t, out, "runtime")
 }
 

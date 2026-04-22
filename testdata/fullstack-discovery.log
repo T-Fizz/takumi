@@ -52,7 +52,7 @@ Build completed: 2 passed
 
 Results:
   ✓ backend — 4ms (log: ./.takumi/logs/backend.build.log)
-  ✓ frontend — 3ms (log: ./.takumi/logs/frontend.build.log)
+  ✓ frontend — 4ms (log: ./.takumi/logs/frontend.build.log)
 
 # ── 7. Agent runs tests — pytest + vitest in dependency order
 
@@ -61,7 +61,7 @@ Test completed: 2 passed
 
 Results:
   ✓ backend — 4ms (log: ./.takumi/logs/backend.test.log)
-  ✓ frontend — 3ms (log: ./.takumi/logs/frontend.test.log)
+  ✓ frontend — 4ms (log: ./.takumi/logs/frontend.test.log)
 
 # ── 8. Rebuild — everything cached, no wasted cycles
 
@@ -141,11 +141,11 @@ Packages (2):
   frontend v0.8.0 — 1 deps, 5 phases, runtime
 
 Recent Builds:
-  ✓ frontend test 3ms
-  ✓ backend build 3ms
+  ✓ frontend test 4ms
+  ✓ backend build 4ms
   ✓ frontend build 3ms
-  ✗ frontend build 3ms
-  ✓ backend build 3ms
+  ✗ frontend build 4ms
+  ✓ backend build 4ms
 
 AI Agent: claude
 
