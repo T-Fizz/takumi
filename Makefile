@@ -9,7 +9,7 @@ MODULE := github.com/tfitz/takumi
 BUILD_DIR := build
 COVER_DIR := coverage
 
-.PHONY: build test lint install cover cover-html integration-test integration-test-llm benchmark benchmark-llm benchmark-perf benchmark-iterate test-all clean
+.PHONY: build test lint install cover cover-html integration-test integration-test-llm benchmark benchmark-llm benchmark-perf benchmark-perf-multi benchmark-iterate test-all clean
 
 build:
 	go build -o $(BUILD_DIR)/$(BINARY) ./cmd/takumi
@@ -65,6 +65,19 @@ benchmark-perf: build
 	@test -n "$$ANTHROPIC_API_KEY" || { echo "Error: ANTHROPIC_API_KEY not set."; exit 1; }
 	@$(PYTHON) -c "import anthropic" 2>/dev/null || { echo "Error: anthropic package not found. Run: pip install anthropic"; exit 1; }
 	TAKUMI_BIN=$(BUILD_DIR)/$(BINARY) $(PYTHON) tests/benchmark/perf/benchmark.py $(ARGS)
+
+benchmark-perf-multi: build
+	@test -n "$$ANTHROPIC_API_KEY" || { echo "Error: ANTHROPIC_API_KEY not set."; exit 1; }
+	@$(PYTHON) -c "import anthropic" 2>/dev/null || { echo "Error: anthropic package not found. Run: pip install anthropic"; exit 1; }
+	@for model in claude-haiku-4-5-20251001 claude-sonnet-4-6; do \
+		echo "=== Benchmarking $$model ==="; \
+		BENCH_MODEL=$$model \
+		BENCH_OUTPUT=tests/benchmark/perf/results-$$(echo $$model | sed 's/claude-//;s/-20.*//').json \
+		TAKUMI_BIN=$(BUILD_DIR)/$(BINARY) $(PYTHON) tests/benchmark/perf/benchmark.py $(ARGS); \
+	done
+	$(PYTHON) tests/benchmark/perf/combine-results.py \
+		--input-dir tests/benchmark/perf/ \
+		--output tests/benchmark/perf/results-combined.json
 
 benchmark-iterate: build
 	@test -n "$$ANTHROPIC_API_KEY" || { echo "Error: ANTHROPIC_API_KEY not set."; exit 1; }

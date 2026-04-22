@@ -16,6 +16,21 @@ jobs:
   benchmark:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - model: claude-haiku-4-5-20251001
+            slug: haiku
+            scenarios: ""
+          - model: claude-sonnet-4-6
+            slug: sonnet
+            scenarios: ""
+          - model: claude-opus-4-6
+            slug: opus
+            scenarios: "fix-build-error"
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -44,7 +59,7 @@ jobs:
             TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "dev")
           fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "Benchmarking version: $TAG"
+          echo "Benchmarking ${{ matrix.slug }} (${{ matrix.model }}) for $TAG"
 
       - name: Build Takumi
         run: make build
@@ -53,13 +68,63 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           TAKUMI_BIN: build/takumi
-          BENCH_MODEL: claude-sonnet-4-6
-        run: python3 tests/benchmark/perf/benchmark.py
+          BENCH_MODEL: ${{ matrix.model }}
+          BENCH_OUTPUT: results-${{ matrix.slug }}.json
+        run: python3 tests/benchmark/perf/benchmark.py ${{ matrix.scenarios }}
+
+      - name: Upload model results
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-${{ matrix.slug }}
+          path: results-${{ matrix.slug }}.json
+
+  publish:
+    runs-on: ubuntu-latest
+    needs: benchmark
+    if: always() && needs.benchmark.result != 'cancelled'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Download all benchmark results
+        uses: actions/download-artifact@v4
+        with:
+          path: bench-results/
+          pattern: bench-*
+          merge-multiple: true
+
+      - name: List results
+        run: ls -la bench-results/
+
+      - name: Combine results
+        run: |
+          python3 tests/benchmark/perf/combine-results.py \
+            --input-dir bench-results/ \
+            --output tests/benchmark/perf/results-combined.json
+
+      - name: Resolve version tag
+        id: version
+        run: |
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            TAG="${{ github.ref_name }}"
+          else
+            TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "dev")
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
       - name: Update benchmarks page
         run: |
           python3 tests/benchmark/perf/update-benchmarks-page.py \
-            --version "${{ steps.version.outputs.tag }}"
+            --version "${{ steps.version.outputs.tag }}" \
+            --results tests/benchmark/perf/results-combined.json
 
       - name: Commit updated benchmarks
         run: |
@@ -67,10 +132,10 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add docs/dev/benchmarks.md
           git diff --cached --quiet && echo "No benchmark changes" && exit 0
-          git commit -m "benchmark: add ${{ steps.version.outputs.tag }} performance results"
+          git commit -m "benchmark: add ${{ steps.version.outputs.tag }} multi-model results"
           git push origin main
 
-      - name: Upload results as release artifact
+      - name: Upload combined results as release artifact
         if: startsWith(github.ref, 'refs/tags/')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -78,6 +143,6 @@ jobs:
           TAG="${{ steps.version.outputs.tag }}"
           if gh release view "$TAG" &>/dev/null; then
             gh release upload "$TAG" \
-              tests/benchmark/perf/results.json#benchmark-results.json \
+              tests/benchmark/perf/results-combined.json#benchmark-results.json \
               --clobber
           fi

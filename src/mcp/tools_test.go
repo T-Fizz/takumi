@@ -216,6 +216,147 @@ func TestHandleTest_Success(t *testing.T) {
 	assert.Contains(t, text, "my-pkg")
 }
 
+func TestHandleTest_SpecificPackage(t *testing.T) {
+	setupWorkspace(t)
+	result, err := handleTest(context.Background(), makeRequest(map[string]any{
+		"packages": "my-pkg",
+	}))
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+	text := result.Content[0].(gomcp.TextContent).Text
+	assert.Contains(t, text, "my-pkg")
+}
+
+func TestHandleTest_NoWorkspace(t *testing.T) {
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(origDir)
+
+	result, err := handleTest(context.Background(), makeRequest(nil))
+	require.NoError(t, err)
+	assert.True(t, result.IsError)
+}
+
+func TestHandleTest_Failure(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, ".takumi", "logs"), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "takumi.yaml"), []byte(`workspace:
+  name: fail-ws
+`), 0644))
+
+	pkgDir := filepath.Join(dir, "bad-pkg")
+	require.NoError(t, os.MkdirAll(pkgDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(pkgDir, "takumi-pkg.yaml"), []byte(`package:
+  name: bad-pkg
+  version: 0.1.0
+phases:
+  test:
+    commands:
+      - exit 1
+`), 0644))
+
+	origDir, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(origDir)
+
+	result, err := handleTest(context.Background(), makeRequest(nil))
+	require.NoError(t, err)
+	assert.True(t, result.IsError)
+
+	text := result.Content[0].(gomcp.TextContent).Text
+	assert.Contains(t, text, "failed")
+	assert.Contains(t, text, "bad-pkg")
+}
+
+func TestHandleTest_WritesLogFiles(t *testing.T) {
+	dir := setupWorkspace(t)
+	_, err := handleTest(context.Background(), makeRequest(nil))
+	require.NoError(t, err)
+
+	logPath := filepath.Join(dir, ".takumi", "logs", "my-pkg.test.log")
+	assert.FileExists(t, logPath)
+}
+
+func TestHandleTest_MultiplePackages(t *testing.T) {
+	setupWorkspaceWithDeps(t)
+	result, err := handleTest(context.Background(), makeRequest(map[string]any{
+		"packages": "lib",
+	}))
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+	text := result.Content[0].(gomcp.TextContent).Text
+	assert.Contains(t, text, "lib")
+}
+
+func TestHandleTest_AffectedFlag(t *testing.T) {
+	dir := setupGitWorkspace(t)
+
+	// Modify lib — api depends on lib so both should be tested
+	os.WriteFile(filepath.Join(dir, "lib", "main.go"), []byte("package lib\n// changed\n"), 0644)
+
+	result, err := handleTest(context.Background(), makeRequest(map[string]any{
+		"affected": true,
+	}))
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+
+	text := result.Content[0].(gomcp.TextContent).Text
+	assert.Contains(t, text, "Test completed")
+	assert.Contains(t, text, "lib")
+}
+
+func TestHandleTest_AffectedNoChanges(t *testing.T) {
+	setupGitWorkspace(t)
+
+	result, err := handleTest(context.Background(), makeRequest(map[string]any{
+		"affected": true,
+	}))
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+
+	text := result.Content[0].(gomcp.TextContent).Text
+	assert.Contains(t, text, "No affected packages")
+}
+
+func TestHandleTest_NoCacheFlag(t *testing.T) {
+	setupWorkspace(t)
+	result, err := handleTest(context.Background(), makeRequest(map[string]any{
+		"no_cache": true,
+	}))
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+	text := result.Content[0].(gomcp.TextContent).Text
+	assert.Contains(t, text, "Test completed")
+}
+
+func TestHandleTest_CachedOnSecondRun(t *testing.T) {
+	setupWorkspace(t)
+
+	// First run
+	result1, err := handleTest(context.Background(), makeRequest(nil))
+	require.NoError(t, err)
+	text1 := result1.Content[0].(gomcp.TextContent).Text
+	assert.Contains(t, text1, "Test completed: 1 passed")
+
+	// Second run — should be cached
+	result2, err := handleTest(context.Background(), makeRequest(nil))
+	require.NoError(t, err)
+	text2 := result2.Content[0].(gomcp.TextContent).Text
+	assert.Contains(t, text2, "cached")
+}
+
+func TestHandleTest_AffectedNoGit(t *testing.T) {
+	setupWorkspace(t) // no git repo
+	result, err := handleTest(context.Background(), makeRequest(map[string]any{
+		"affected": true,
+	}))
+	require.NoError(t, err)
+	assert.True(t, result.IsError)
+	text := result.Content[0].(gomcp.TextContent).Text
+	assert.Contains(t, text, "failed to determine affected")
+}
+
 func TestHandleBuild_SpecificPackage(t *testing.T) {
 	setupWorkspace(t)
 	result, err := handleBuild(context.Background(), makeRequest(map[string]any{
@@ -1079,4 +1220,113 @@ func TestHandleBuild_CachedOnSecondRun(t *testing.T) {
 	require.NoError(t, err)
 	text2 := result2.Content[0].(gomcp.TextContent).Text
 	assert.Contains(t, text2, "cached")
+}
+
+// ---------------------------------------------------------------------------
+// Combined flag tests
+// ---------------------------------------------------------------------------
+
+func TestHandleBuild_AffectedNoCache(t *testing.T) {
+	dir := setupGitWorkspace(t)
+
+	// Build once to populate cache
+	_, err := handleBuild(context.Background(), makeRequest(nil))
+	require.NoError(t, err)
+
+	// Modify lib
+	os.WriteFile(filepath.Join(dir, "lib", "main.go"), []byte("package lib\n// changed\n"), 0644)
+
+	// Build with both --affected and --no-cache
+	result, err := handleBuild(context.Background(), makeRequest(map[string]any{
+		"affected": true,
+		"no_cache": true,
+	}))
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+
+	text := result.Content[0].(gomcp.TextContent).Text
+	assert.Contains(t, text, "Build completed")
+	assert.Contains(t, text, "lib")
+}
+
+func TestHandleTest_AffectedNoCache(t *testing.T) {
+	dir := setupGitWorkspace(t)
+
+	// Test once
+	_, err := handleTest(context.Background(), makeRequest(nil))
+	require.NoError(t, err)
+
+	// Modify lib
+	os.WriteFile(filepath.Join(dir, "lib", "main.go"), []byte("package lib\n// changed\n"), 0644)
+
+	// Test with both --affected and --no-cache
+	result, err := handleTest(context.Background(), makeRequest(map[string]any{
+		"affected": true,
+		"no_cache": true,
+	}))
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+
+	text := result.Content[0].(gomcp.TextContent).Text
+	assert.Contains(t, text, "Test completed")
+	assert.Contains(t, text, "lib")
+}
+
+func TestBuildThenTest_SameWorkspace(t *testing.T) {
+	dir := setupWorkspace(t)
+
+	// Build first
+	buildResult, err := handleBuild(context.Background(), makeRequest(nil))
+	require.NoError(t, err)
+	require.False(t, buildResult.IsError)
+
+	// Test in same workspace — should work with existing state
+	testResult, err := handleTest(context.Background(), makeRequest(nil))
+	require.NoError(t, err)
+	require.False(t, testResult.IsError)
+
+	// Verify both phases have logs
+	assert.FileExists(t, filepath.Join(dir, ".takumi", "logs", "my-pkg.build.log"))
+	assert.FileExists(t, filepath.Join(dir, ".takumi", "logs", "my-pkg.test.log"))
+
+	// Verify metrics recorded both phases
+	metricsPath := filepath.Join(dir, ".takumi", "metrics.json")
+	data, _ := os.ReadFile(metricsPath)
+	var metrics executor.MetricsFile
+	require.NoError(t, json.Unmarshal(data, &metrics))
+	assert.GreaterOrEqual(t, len(metrics.Runs), 2)
+}
+
+// ---------------------------------------------------------------------------
+// Affected edge cases
+// ---------------------------------------------------------------------------
+
+func TestHandleAffected_DeletedFile(t *testing.T) {
+	dir := setupGitWorkspace(t)
+
+	// Delete a tracked file in lib
+	os.Remove(filepath.Join(dir, "lib", "main.go"))
+
+	result, err := handleAffected(context.Background(), makeRequest(nil))
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+
+	text := result.Content[0].(gomcp.TextContent).Text
+	assert.Contains(t, text, "lib")
+}
+
+func TestHandleAffected_MultiplePackagesChanged(t *testing.T) {
+	dir := setupGitWorkspace(t)
+
+	// Modify both packages
+	os.WriteFile(filepath.Join(dir, "lib", "main.go"), []byte("package lib\n// changed\n"), 0644)
+	os.WriteFile(filepath.Join(dir, "api", "main.go"), []byte("package api\n// changed\n"), 0644)
+
+	result, err := handleAffected(context.Background(), makeRequest(nil))
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+
+	text := result.Content[0].(gomcp.TextContent).Text
+	assert.Contains(t, text, "lib")
+	assert.Contains(t, text, "api")
 }

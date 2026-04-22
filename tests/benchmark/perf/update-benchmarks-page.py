@@ -2,9 +2,11 @@
 """
 Update docs/dev/benchmarks.md with results from the latest benchmark run.
 
+Supports both single-model results.json and multi-model results-combined.json.
+
 Usage:
   python3 update-benchmarks-page.py --version v1.0.2
-  python3 update-benchmarks-page.py --version v1.0.2 --results results.json --page ../../docs/dev/benchmarks.md
+  python3 update-benchmarks-page.py --version v1.0.2 --results results-combined.json
 """
 
 import argparse
@@ -28,20 +30,35 @@ SCENARIOS = {
     },
 }
 
+MODEL_NAMES = {
+    "claude-haiku-4-5-20251001": "Haiku 4.5",
+    "claude-sonnet-4-6": "Sonnet 4.6",
+    "claude-opus-4-6": "Opus 4.6",
+}
+
 MARKER = "<!-- BENCHMARK_INSERT -->"
 
 
-def fmt(n: int) -> str:
+def fmt(n):
     return f"{n:,}"
 
 
-def pct(old, new) -> str:
+def pct(old, new):
     if old == 0:
         return "—"
     return f"{(old - new) / old * 100:.1f}%"
 
 
-def generate_section(version: str, results: dict) -> str:
+def short_name(model):
+    return MODEL_NAMES.get(model, model)
+
+
+def is_multi_model(data):
+    return "models" in data
+
+
+def generate_section_single(version, results):
+    """Generate markdown for a single-model result (backward compat)."""
     model = results.get("model", "unknown")
     date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
@@ -63,14 +80,12 @@ def generate_section(version: str, results: dict) -> str:
     ]
 
     for sid, meta in SCENARIOS.items():
-        if sid not in results["scenarios"]:
+        if sid not in results.get("scenarios", {}):
             continue
 
         scenario = results["scenarios"][sid]
         wo = scenario.get("without_takumi", {})
         wi = scenario.get("with_takumi", {})
-
-        # Skip scenarios where either mode errored without producing metrics
         if wo.get("error") and "input_tokens" not in wo:
             continue
         if wi.get("error") and "input_tokens" not in wi:
@@ -95,10 +110,156 @@ def generate_section(version: str, results: dict) -> str:
     return "\n".join(lines)
 
 
+def generate_section_multi(version, combined):
+    """Generate markdown for multi-model results."""
+    date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    models_data = combined["models"]
+
+    # Sort models: haiku, sonnet, opus
+    model_order = ["claude-haiku-4-5-20251001", "claude-sonnet-4-6", "claude-opus-4-6"]
+    models = [m for m in model_order if m in models_data]
+    # Add any models not in our known order
+    for m in models_data:
+        if m not in models:
+            models.append(m)
+
+    model_list = ", ".join(short_name(m) for m in models)
+
+    lines = [
+        f"## {version}\n",
+        f"> {date} | models: {model_list}\n",
+        "### Token Savings by Model\n",
+        "| Model | Without Takumi | With Takumi | Saved | Turns | Tool Calls |",
+        "|-------|---------------|-------------|-------|-------|------------|",
+    ]
+
+    # Track which models ran partial scenarios
+    partial_models = []
+    all_scenario_count = len(SCENARIOS)
+
+    for model in models:
+        data = models_data[model]
+        w = data.get("totals", {}).get("without", {})
+        t = data.get("totals", {}).get("with", {})
+        if not w or not t:
+            continue
+
+        # Count how many scenarios this model ran
+        scenario_count = sum(
+            1 for s in data.get("scenarios", {}).values()
+            if "error" not in s.get("without_takumi", {})
+        )
+        suffix = ""
+        if scenario_count < all_scenario_count:
+            partial_models.append((short_name(model), scenario_count))
+            suffix = "*"
+
+        lines.append(
+            f"| **{short_name(model)}**{suffix} "
+            f"| {fmt(w.get('tokens', 0))} "
+            f"| {fmt(t.get('tokens', 0))} "
+            f"| **{pct(w.get('tokens', 0), t.get('tokens', 0))}** "
+            f"| {w.get('turns', 0)} / {t.get('turns', 0)} "
+            f"| {w.get('calls', 0)} / {t.get('calls', 0)} |"
+        )
+
+    if partial_models:
+        notes = "; ".join(f"{name} ran {n}/{all_scenario_count} scenarios" for name, n in partial_models)
+        lines.append(f"\n*{notes} (cost control)*")
+
+    lines.extend(["", "### Scenarios\n"])
+
+    # Per-scenario comparison across models
+    for sid, meta in SCENARIOS.items():
+        # Find which models have data for this scenario
+        avail = []
+        for model in models:
+            data = models_data[model]
+            if sid not in data.get("scenarios", {}):
+                continue
+            scenario = data["scenarios"][sid]
+            wo = scenario.get("without_takumi", {})
+            wi = scenario.get("with_takumi", {})
+            if wo.get("error") and "input_tokens" not in wo:
+                continue
+            if wi.get("error") and "input_tokens" not in wi:
+                continue
+            avail.append(model)
+
+        if not avail:
+            continue
+
+        lines.extend([
+            f"#### {meta['title']}\n",
+            f"> {meta['desc']}\n",
+        ])
+
+        # Build table with model columns
+        header = "| Metric |"
+        sep = "|--------|"
+        for model in avail:
+            name = short_name(model)
+            header += f" {name} ||"
+            sep += "------|------|"
+
+        lines.append(header)
+        lines.append(sep)
+
+        # Subheader row
+        subheader = "| |"
+        for _ in avail:
+            subheader += " Without | With |"
+        lines.append(subheader)
+
+        # Data rows
+        for metric, key_w, key_t, is_time in [
+            ("Tokens", lambda wo, wi: wo.get("input_tokens", 0) + wo.get("output_tokens", 0),
+                        lambda wo, wi: wi.get("input_tokens", 0) + wi.get("output_tokens", 0), False),
+            ("Turns", lambda wo, wi: wo.get("turns", 0), lambda wo, wi: wi.get("turns", 0), False),
+            ("Tool calls", lambda wo, wi: wo.get("tool_calls", 0), lambda wo, wi: wi.get("tool_calls", 0), False),
+            ("Time", lambda wo, wi: wo.get("wall_time_s", 0), lambda wo, wi: wi.get("wall_time_s", 0), True),
+        ]:
+            row = f"| {metric} |"
+            for model in avail:
+                data = models_data[model]
+                wo = data["scenarios"][sid].get("without_takumi", {})
+                wi = data["scenarios"][sid].get("with_takumi", {})
+                wv = key_w(wo, wi)
+                tv = key_t(wo, wi)
+                if is_time:
+                    row += f" {wv:.1f}s | {tv:.1f}s |"
+                elif isinstance(wv, int):
+                    row += f" {fmt(wv)} | {fmt(tv)} |"
+                else:
+                    row += f" {wv} | {tv} |"
+            lines.append(row)
+
+        # Saved row
+        saved_row = "| **Saved** |"
+        for model in avail:
+            data = models_data[model]
+            wo = data["scenarios"][sid].get("without_takumi", {})
+            wi = data["scenarios"][sid].get("with_takumi", {})
+            w_tok = wo.get("input_tokens", 0) + wo.get("output_tokens", 0)
+            t_tok = wi.get("input_tokens", 0) + wi.get("output_tokens", 0)
+            saved_row += f" **{pct(w_tok, t_tok)}** ||"
+        lines.append(saved_row)
+
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+def generate_section(version, data):
+    if is_multi_model(data):
+        return generate_section_multi(version, data)
+    return generate_section_single(version, data)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Update benchmarks page")
     parser.add_argument("--version", required=True, help="Version tag (e.g. v1.0.2)")
-    parser.add_argument("--results", default=None, help="Path to results.json")
+    parser.add_argument("--results", default=None, help="Path to results.json or results-combined.json")
     parser.add_argument("--page", default=None, help="Path to benchmarks.md")
     args = parser.parse_args()
 
@@ -116,7 +277,7 @@ def main():
         sys.exit(1)
 
     with open(results_path) as f:
-        results = json.load(f)
+        data = json.load(f)
 
     page = page_path.read_text()
 
@@ -129,7 +290,7 @@ def main():
         print(f"Version {args.version} already in {page_path} — skipping")
         sys.exit(0)
 
-    section = generate_section(args.version, results)
+    section = generate_section(args.version, data)
     page = page.replace(MARKER, f"{MARKER}\n\n{section}\n---\n", 1)
     page_path.write_text(page)
     print(f"Added {args.version} results to {page_path}")
