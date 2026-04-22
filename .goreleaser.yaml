@@ -52,6 +52,7 @@ brews:
       owner: T-Fizz
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    directory: Formula
     name: takumi
     homepage: https://github.com/T-Fizz/takumi
     description: "AI-aware, language-agnostic workspace builder"
