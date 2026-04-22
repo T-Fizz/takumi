@@ -19,12 +19,18 @@ SCENARIOS = {
     "fix-build-error-go": {"title": "Fix Build Error (Go)", "desc": "Find and fix a type error in a Go HTTP handler", "group": "fix-build-error", "lang": "Go"},
     "fix-build-error-python": {"title": "Fix Build Error (Python)", "desc": "Find and fix a TypeError in a Python project", "group": "fix-build-error", "lang": "Python"},
     "fix-build-error-ts": {"title": "Fix Build Error (TypeScript)", "desc": "Find and fix a type error caught by tsc", "group": "fix-build-error", "lang": "TypeScript"},
+    "fix-build-error-rust": {"title": "Fix Build Error (Rust)", "desc": "Find and fix a type error in a Rust workspace", "group": "fix-build-error", "lang": "Rust"},
+    "fix-build-error-java": {"title": "Fix Build Error (Java)", "desc": "Find and fix a type error in a Java project", "group": "fix-build-error", "lang": "Java"},
     "scoped-rebuild-go": {"title": "Scoped Rebuild (Go)", "desc": "After changing shared lib, build only affected Go packages", "group": "scoped-rebuild", "lang": "Go"},
     "scoped-rebuild-python": {"title": "Scoped Rebuild (Python)", "desc": "After changing shared lib, rebuild only affected Python packages", "group": "scoped-rebuild", "lang": "Python"},
     "scoped-rebuild-ts": {"title": "Scoped Rebuild (TypeScript)", "desc": "After changing shared lib, build only affected TS packages", "group": "scoped-rebuild", "lang": "TypeScript"},
+    "scoped-rebuild-rust": {"title": "Scoped Rebuild (Rust)", "desc": "After changing shared crate, build only affected Rust crates", "group": "scoped-rebuild", "lang": "Rust"},
+    "scoped-rebuild-java": {"title": "Scoped Rebuild (Java)", "desc": "After changing shared lib, build only affected Java packages", "group": "scoped-rebuild", "lang": "Java"},
     "understand-structure-go": {"title": "Understand Structure (Go)", "desc": "Explain dependency graph and build order of a Go monorepo", "group": "understand-structure", "lang": "Go"},
     "understand-structure-python": {"title": "Understand Structure (Python)", "desc": "Explain dependency graph and build order of a Python project", "group": "understand-structure", "lang": "Python"},
     "understand-structure-ts": {"title": "Understand Structure (TypeScript)", "desc": "Explain dependency graph and build order of a TS monorepo", "group": "understand-structure", "lang": "TypeScript"},
+    "understand-structure-rust": {"title": "Understand Structure (Rust)", "desc": "Explain dependency graph and build order of a Rust workspace", "group": "understand-structure", "lang": "Rust"},
+    "understand-structure-java": {"title": "Understand Structure (Java)", "desc": "Explain dependency graph and build order of a Java project", "group": "understand-structure", "lang": "Java"},
 }
 
 SCENARIO_GROUPS = {

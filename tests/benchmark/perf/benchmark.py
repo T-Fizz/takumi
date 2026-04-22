@@ -237,6 +237,12 @@ def _takumi_init(workdir):
         shell=True, cwd=workdir, capture_output=True,
     )
 
+def _takumi_env_setup(workdir):
+    subprocess.run(
+        f"{TAKUMI_BIN} env setup",
+        shell=True, cwd=workdir, capture_output=True,
+    )
+
 
 def setup_fix_build_error_go(workdir, with_takumi):
     """
@@ -572,10 +578,17 @@ if __name__ == "__main__":
 package:
   name: shared
   version: 0.1.0
+runtime:
+  setup:
+    - python3 -m venv {{env_dir}}
+  env:
+    PATH: "{{env_dir}}/bin:$PATH"
+    VIRTUAL_ENV: "{{env_dir}}"
+    PYTHONPATH: ".."
 phases:
   build:
     commands:
-      - python -m py_compile shared/lib.py
+      - python -m py_compile lib.py
   test:
     commands:
       - python -c "from shared.lib import greet; assert greet('X') == 'Hello, X'"
@@ -586,16 +599,24 @@ package:
   version: 0.1.0
 dependencies:
   - shared
+runtime:
+  setup:
+    - python3 -m venv {{env_dir}}
+  env:
+    PATH: "{{env_dir}}/bin:$PATH"
+    VIRTUAL_ENV: "{{env_dir}}"
+    PYTHONPATH: ".."
 phases:
   build:
     commands:
-      - python api/main.py
+      - python main.py
   test:
     commands:
-      - python api/main.py
+      - python main.py
 """)
         os.makedirs(f"{workdir}/__pycache__", exist_ok=True)
         _git_commit(workdir, "add takumi")
+        _takumi_env_setup(workdir)
 
     task = (
         "The build is broken in this Python project. Running the api package "
@@ -682,21 +703,36 @@ def setup_scoped_rebuild_python(workdir, with_takumi):
         Path(f"{workdir}/takumi.yaml").write_text(
             "workspace:\n  name: myapp\n  ignore:\n    - __pycache__/\n"
         )
+        _RUNTIME_PY = (
+            "runtime:\n"
+            "  setup:\n"
+            "    - python3 -m venv {{env_dir}}\n"
+            "  env:\n"
+            '    PATH: "{{env_dir}}/bin:$PATH"\n'
+            '    VIRTUAL_ENV: "{{env_dir}}"\n'
+            '    PYTHONPATH: ".."\n'
+        )
         for pkg, deps in [("shared", []), ("api", ["shared"]), ("web", ["shared"])]:
             dep_yaml = ""
             if deps:
                 dep_yaml = "dependencies:\n" + "".join(f"  - {d}\n" for d in deps)
-            Path(f"{workdir}/{pkg}/takumi-pkg.yaml").write_text(
-                f"package:\n  name: {pkg}\n  version: 0.1.0\n{dep_yaml}"
-                f"phases:\n  build:\n    commands:\n      - python {pkg}/main.py\n"
-                f"  test:\n    commands:\n      - python {pkg}/main.py\n"
-            ) if deps else Path(f"{workdir}/{pkg}/takumi-pkg.yaml").write_text(
-                f"package:\n  name: {pkg}\n  version: 0.1.0\n"
-                f"phases:\n  build:\n    commands:\n      - python -m py_compile {pkg}/lib.py\n"
-                f"  test:\n    commands:\n"
-                f'      - python -c "from {pkg}.lib import get_version; assert get_version()"\n'
-            )
+            if deps:
+                Path(f"{workdir}/{pkg}/takumi-pkg.yaml").write_text(
+                    f"package:\n  name: {pkg}\n  version: 0.1.0\n{dep_yaml}"
+                    f"{_RUNTIME_PY}"
+                    f"phases:\n  build:\n    commands:\n      - python main.py\n"
+                    f"  test:\n    commands:\n      - python main.py\n"
+                )
+            else:
+                Path(f"{workdir}/{pkg}/takumi-pkg.yaml").write_text(
+                    f"package:\n  name: {pkg}\n  version: 0.1.0\n"
+                    f"{_RUNTIME_PY}"
+                    f"phases:\n  build:\n    commands:\n      - python -m py_compile lib.py\n"
+                    f"  test:\n    commands:\n"
+                    f'      - python -c "from {pkg}.lib import get_version; assert get_version()"\n'
+                )
         _git_commit(workdir, "add takumi")
+        _takumi_env_setup(workdir)
 
     # Make a change to shared after baseline
     Path(f"{workdir}/shared/lib.py").write_text(
@@ -797,6 +833,15 @@ def setup_understand_structure_python(workdir, with_takumi):
         Path(f"{workdir}/takumi.yaml").write_text(
             "workspace:\n  name: platform\n"
         )
+        _RUNTIME_PY = (
+            "runtime:\n"
+            "  setup:\n"
+            "    - python3 -m venv {{env_dir}}\n"
+            "  env:\n"
+            '    PATH: "{{env_dir}}/bin:$PATH"\n'
+            '    VIRTUAL_ENV: "{{env_dir}}"\n'
+            '    PYTHONPATH: ".."\n'
+        )
         configs = {
             "core": [],
             "auth": ["core"],
@@ -809,9 +854,11 @@ def setup_understand_structure_python(workdir, with_takumi):
                 dep_yaml = "dependencies:\n" + "".join(f"  - {d}\n" for d in deps)
             Path(f"{workdir}/{pkg}/takumi-pkg.yaml").write_text(
                 f"package:\n  name: {pkg}\n  version: 0.1.0\n{dep_yaml}"
-                f"phases:\n  build:\n    commands:\n      - python {pkg}/main.py\n"
+                f"{_RUNTIME_PY}"
+                f"phases:\n  build:\n    commands:\n      - python main.py\n"
             )
         _git_commit(workdir, "add takumi")
+        _takumi_env_setup(workdir)
 
     task = (
         "I'm new to this Python project. Explain the dependency structure: "
@@ -895,7 +942,7 @@ package:
 phases:
   build:
     commands:
-      - npx tsc -p shared/tsconfig.json
+      - npx tsc -p tsconfig.json
 """)
         Path(f"{workdir}/api/takumi-pkg.yaml").write_text("""\
 package:
@@ -906,7 +953,7 @@ dependencies:
 phases:
   build:
     commands:
-      - npx tsc -p api/tsconfig.json
+      - npx tsc -p tsconfig.json
 """)
         _git_commit(workdir, "add takumi")
 
@@ -1024,7 +1071,7 @@ def setup_scoped_rebuild_ts(workdir, with_takumi):
                 dep_yaml = "dependencies:\n" + "".join(f"  - {d}\n" for d in deps)
             Path(f"{workdir}/{pkg}/takumi-pkg.yaml").write_text(
                 f"package:\n  name: {pkg}\n  version: 0.1.0\n{dep_yaml}"
-                f"phases:\n  build:\n    commands:\n      - npx tsc -p {pkg}/tsconfig.json\n"
+                f"phases:\n  build:\n    commands:\n      - npx tsc -p tsconfig.json\n"
             )
         _git_commit(workdir, "add takumi")
 
@@ -1168,12 +1215,640 @@ def setup_understand_structure_ts(workdir, with_takumi):
                 dep_yaml = "dependencies:\n" + "".join(f"  - {d}\n" for d in deps)
             Path(f"{workdir}/{pkg}/takumi-pkg.yaml").write_text(
                 f"package:\n  name: {pkg}\n  version: 0.1.0\n{dep_yaml}"
-                f"phases:\n  build:\n    commands:\n      - npx tsc -p {pkg}/tsconfig.json\n"
+                f"phases:\n  build:\n    commands:\n      - npx tsc -p tsconfig.json\n"
             )
         _git_commit(workdir, "add takumi")
 
     task = (
         "I'm new to this TypeScript project. Explain the dependency structure: "
+        "which packages depend on which, and what order should they be "
+        "built in? Call task_complete when done."
+    )
+
+    def verify(_wd, metrics):
+        return _verify_understand_structure(metrics)
+
+    return {"task": task, "verify": verify}
+
+
+# ---------------------------------------------------------------------------
+# Rust scenario setup functions
+# ---------------------------------------------------------------------------
+
+def setup_fix_build_error_rust(workdir, with_takumi):
+    """
+    Scenario: Rust workspace with a type error in the api crate.
+    Agent must find and fix the bug, then verify cargo build passes.
+    """
+    # Workspace Cargo.toml
+    Path(f"{workdir}/Cargo.toml").write_text(
+        '[workspace]\nmembers = ["shared", "api"]\nresolver = "2"\n'
+    )
+
+    # shared crate (compiles fine)
+    os.makedirs(f"{workdir}/shared/src")
+    Path(f"{workdir}/shared/Cargo.toml").write_text(
+        '[package]\nname = "shared"\nversion = "0.1.0"\nedition = "2021"\n'
+    )
+    Path(f"{workdir}/shared/src/lib.rs").write_text(
+        'pub fn greet(name: &str) -> String {\n'
+        '    format!("Hello, {}", name)\n'
+        '}\n'
+    )
+
+    # api crate — broken: assigning &str to u16
+    os.makedirs(f"{workdir}/api/src")
+    Path(f"{workdir}/api/Cargo.toml").write_text(
+        '[package]\nname = "api"\nversion = "0.1.0"\nedition = "2021"\n\n'
+        '[dependencies]\nshared = { path = "../shared" }\n'
+    )
+    Path(f"{workdir}/api/src/main.rs").write_text("""\
+use shared::greet;
+
+fn main() {
+    let port: u16 = "8080";
+    println!("Server on port {}", port);
+    println!("{}", greet("World"));
+}
+""")
+
+    _git_init(workdir)
+
+    if with_takumi:
+        _takumi_init(workdir)
+        os.remove(f"{workdir}/takumi-pkg.yaml")
+        Path(f"{workdir}/takumi.yaml").write_text(
+            "workspace:\n  name: myapp\n  ignore:\n    - target/\n"
+        )
+        Path(f"{workdir}/shared/takumi-pkg.yaml").write_text("""\
+package:
+  name: shared
+  version: 0.1.0
+phases:
+  build:
+    commands:
+      - cargo build -p shared
+  test:
+    commands:
+      - cargo test -p shared
+""")
+        Path(f"{workdir}/api/takumi-pkg.yaml").write_text("""\
+package:
+  name: api
+  version: 0.1.0
+dependencies:
+  - shared
+phases:
+  build:
+    commands:
+      - cargo build -p api
+  test:
+    commands:
+      - cargo test -p api
+""")
+        os.makedirs(f"{workdir}/target", exist_ok=True)
+        _git_commit(workdir, "add takumi")
+
+    task = (
+        "The build is broken in this Rust project. Running cargo build gives "
+        "a type error. Find the bug, fix it, and verify the build passes. "
+        "Call task_complete when done."
+    )
+
+    def verify(wd, metrics):
+        checks = {}
+        score = 0.0
+
+        # 1. cargo build passes (0.4)
+        r = subprocess.run(
+            "cargo build", shell=True, cwd=wd,
+            capture_output=True, text=True,
+        )
+        checks["build_passes"] = r.returncode == 0
+        if checks["build_passes"]:
+            score += 0.4
+
+        # 2. Fix is in the right file (0.2)
+        try:
+            source = Path(f"{wd}/api/src/main.rs").read_text()
+            checks["correct_file"] = 'let port: u16 = "8080"' not in source
+        except Exception:
+            checks["correct_file"] = False
+        if checks["correct_file"]:
+            score += 0.2
+
+        # 3. Fix is correct (0.2)
+        checks["correct_fix"] = False
+        if checks["correct_file"]:
+            if any(p in source for p in (
+                "port: u16 = 8080", "port = 8080",
+                "port: u16 = 8080_u16", 'parse::<u16>',
+                "port: u16 = 8_080",
+            )):
+                checks["correct_fix"] = True
+                score += 0.2
+
+        # 4. shared crate still compiles (0.2)
+        r2 = subprocess.run(
+            "cargo build -p shared", shell=True, cwd=wd,
+            capture_output=True, text=True,
+        )
+        checks["no_collateral"] = r2.returncode == 0
+        if checks["no_collateral"]:
+            score += 0.2
+
+        return {"passed": checks["build_passes"] and checks.get("correct_fix", False), "score": score, "checks": checks}
+
+    return {"task": task, "verify": verify}
+
+
+def setup_scoped_rebuild_rust(workdir, with_takumi):
+    """
+    Scenario: 3-crate Rust workspace. shared was just modified.
+    Agent must figure out what's affected and build only those.
+    """
+    Path(f"{workdir}/Cargo.toml").write_text(
+        '[workspace]\nmembers = ["shared", "api", "web"]\nresolver = "2"\n'
+    )
+
+    for crate in ("shared", "api", "web"):
+        os.makedirs(f"{workdir}/{crate}/src")
+
+    Path(f"{workdir}/shared/Cargo.toml").write_text(
+        '[package]\nname = "shared"\nversion = "0.1.0"\nedition = "2021"\n'
+    )
+    Path(f"{workdir}/shared/src/lib.rs").write_text(
+        'pub fn version() -> &\'static str { "1.0" }\n'
+    )
+
+    Path(f"{workdir}/api/Cargo.toml").write_text(
+        '[package]\nname = "api"\nversion = "0.1.0"\nedition = "2021"\n\n'
+        '[dependencies]\nshared = { path = "../shared" }\n'
+    )
+    Path(f"{workdir}/api/src/main.rs").write_text(
+        'fn main() { println!("api {}", shared::version()); }\n'
+    )
+
+    Path(f"{workdir}/web/Cargo.toml").write_text(
+        '[package]\nname = "web"\nversion = "0.1.0"\nedition = "2021"\n\n'
+        '[dependencies]\nshared = { path = "../shared" }\n'
+    )
+    Path(f"{workdir}/web/src/main.rs").write_text(
+        'fn main() { println!("web {}", shared::version()); }\n'
+    )
+
+    _git_init(workdir)
+
+    if with_takumi:
+        _takumi_init(workdir)
+        os.remove(f"{workdir}/takumi-pkg.yaml")
+        Path(f"{workdir}/takumi.yaml").write_text(
+            "workspace:\n  name: myapp\n  ignore:\n    - target/\n"
+        )
+        for crate, deps in [("shared", []), ("api", ["shared"]), ("web", ["shared"])]:
+            dep_yaml = ""
+            if deps:
+                dep_yaml = "dependencies:\n" + "".join(f"  - {d}\n" for d in deps)
+            Path(f"{workdir}/{crate}/takumi-pkg.yaml").write_text(
+                f"package:\n  name: {crate}\n  version: 0.1.0\n{dep_yaml}"
+                f"phases:\n  build:\n    commands:\n      - cargo build -p {crate}\n"
+                f"  test:\n    commands:\n      - cargo test -p {crate}\n"
+            )
+        os.makedirs(f"{workdir}/target", exist_ok=True)
+        _git_commit(workdir, "add takumi")
+
+    # Make a change to shared after baseline
+    Path(f"{workdir}/shared/src/lib.rs").write_text(
+        'pub fn version() -> &\'static str { "2.0" }\n'
+    )
+
+    task = (
+        "I just changed the shared library in this Rust workspace. Figure out "
+        "which crates are affected by this change and build only those — "
+        "don't rebuild anything that hasn't changed. Call task_complete when done."
+    )
+
+    def verify(wd, metrics):
+        checks = {}
+        score = 0.0
+
+        # 1. All crates compile (0.3)
+        r = subprocess.run(
+            "cargo build", shell=True, cwd=wd,
+            capture_output=True, text=True,
+        )
+        checks["all_compile"] = r.returncode == 0
+        if checks["all_compile"]:
+            score += 0.3
+
+        # 2. Agent identified affected crates (0.3)
+        transcript_text = " ".join(
+            e.get("output", "") + " " + e.get("text", "") + " " +
+            e.get("input", {}).get("summary", "") + " " +
+            e.get("input", {}).get("command", "")
+            for e in metrics.transcript
+        ).lower()
+        dep_words = ("affected", "depend", "←", "<-", "downstream", "consumer")
+        found_api = "api" in transcript_text and any(w in transcript_text for w in dep_words)
+        found_web = "web" in transcript_text and any(w in transcript_text for w in dep_words)
+        checks["identified_affected"] = found_api and found_web
+        if checks["identified_affected"]:
+            score += 0.3
+
+        # 3. Agent scoped its work (0.4)
+        run_commands = [
+            e.get("input", {}).get("command", "")
+            for e in metrics.transcript if e.get("tool") == "run_command"
+        ]
+        used_affected = any("affected" in cmd for cmd in run_commands)
+        used_targeted = any(
+            crate in cmd for cmd in run_commands
+            for crate in ("shared", "api", "web")
+            if ("cargo" in cmd or "takumi" in cmd or "build" in cmd)
+        )
+        checks["scoped_build"] = used_affected or used_targeted
+        if checks["scoped_build"]:
+            score += 0.4
+
+        passed = checks["all_compile"] and checks["identified_affected"]
+        return {"passed": passed, "score": score, "checks": checks}
+
+    return {"task": task, "verify": verify}
+
+
+def setup_understand_structure_rust(workdir, with_takumi):
+    """
+    Scenario: 4-crate Rust workspace with a diamond dependency.
+    Agent must explain the dependency structure and build order.
+    """
+    Path(f"{workdir}/Cargo.toml").write_text(
+        '[workspace]\nmembers = ["core", "auth", "api", "gateway"]\nresolver = "2"\n'
+    )
+
+    for crate in ("core", "auth", "api", "gateway"):
+        os.makedirs(f"{workdir}/{crate}/src")
+
+    Path(f"{workdir}/core/Cargo.toml").write_text(
+        '[package]\nname = "core"\nversion = "0.1.0"\nedition = "2021"\n'
+    )
+    Path(f"{workdir}/core/src/lib.rs").write_text(
+        'pub fn init() { println!("core"); }\n'
+    )
+
+    Path(f"{workdir}/auth/Cargo.toml").write_text(
+        '[package]\nname = "auth"\nversion = "0.1.0"\nedition = "2021"\n\n'
+        '[dependencies]\ncore = { path = "../core" }\n'
+    )
+    Path(f"{workdir}/auth/src/lib.rs").write_text(
+        'pub fn init() { core::init(); println!("auth"); }\n'
+    )
+
+    Path(f"{workdir}/api/Cargo.toml").write_text(
+        '[package]\nname = "api"\nversion = "0.1.0"\nedition = "2021"\n\n'
+        '[dependencies]\ncore = { path = "../core" }\n'
+    )
+    Path(f"{workdir}/api/src/lib.rs").write_text(
+        'pub fn init() { core::init(); println!("api"); }\n'
+    )
+
+    Path(f"{workdir}/gateway/Cargo.toml").write_text(
+        '[package]\nname = "gateway"\nversion = "0.1.0"\nedition = "2021"\n\n'
+        '[dependencies]\nauth = { path = "../auth" }\napi = { path = "../api" }\n'
+    )
+    Path(f"{workdir}/gateway/src/main.rs").write_text(
+        'fn main() { auth::init(); api::init(); println!("gateway"); }\n'
+    )
+
+    _git_init(workdir)
+
+    if with_takumi:
+        _takumi_init(workdir)
+        os.remove(f"{workdir}/takumi-pkg.yaml")
+        Path(f"{workdir}/takumi.yaml").write_text(
+            "workspace:\n  name: platform\n  ignore:\n    - target/\n"
+        )
+        configs = {
+            "core": [],
+            "auth": ["core"],
+            "api": ["core"],
+            "gateway": ["auth", "api"],
+        }
+        for crate, deps in configs.items():
+            dep_yaml = ""
+            if deps:
+                dep_yaml = "dependencies:\n" + "".join(f"  - {d}\n" for d in deps)
+            Path(f"{workdir}/{crate}/takumi-pkg.yaml").write_text(
+                f"package:\n  name: {crate}\n  version: 0.1.0\n{dep_yaml}"
+                f"phases:\n  build:\n    commands:\n      - cargo build -p {crate}\n"
+            )
+        _git_commit(workdir, "add takumi")
+
+    task = (
+        "I'm new to this Rust workspace. Explain the dependency structure: "
+        "which crates depend on which, and what order should they be "
+        "built in? Call task_complete when done."
+    )
+
+    def verify(_wd, metrics):
+        return _verify_understand_structure(metrics)
+
+    return {"task": task, "verify": verify}
+
+
+# ---------------------------------------------------------------------------
+# Java scenario setup functions
+# ---------------------------------------------------------------------------
+
+def setup_fix_build_error_java(workdir, with_takumi):
+    """
+    Scenario: Java project with a type error in the api package.
+    Agent must find and fix the bug, then verify javac passes.
+    """
+    os.makedirs(f"{workdir}/shared/src")
+    Path(f"{workdir}/shared/src/Lib.java").write_text("""\
+public class Lib {
+    public static String greet(String name) {
+        return "Hello, " + name;
+    }
+}
+""")
+
+    os.makedirs(f"{workdir}/api/src")
+    # Bug: assigning String to int
+    Path(f"{workdir}/api/src/Main.java").write_text("""\
+public class Main {
+    public static void main(String[] args) {
+        int port = "8080";
+        System.out.println("Server on port " + port);
+        System.out.println(Lib.greet("World"));
+    }
+}
+""")
+
+    _git_init(workdir)
+
+    if with_takumi:
+        _takumi_init(workdir)
+        os.remove(f"{workdir}/takumi-pkg.yaml")
+        Path(f"{workdir}/takumi.yaml").write_text(
+            "workspace:\n  name: myapp\n  ignore:\n    - '*.class'\n"
+        )
+        Path(f"{workdir}/shared/takumi-pkg.yaml").write_text("""\
+package:
+  name: shared
+  version: 0.1.0
+phases:
+  build:
+    commands:
+      - javac src/Lib.java
+""")
+        Path(f"{workdir}/api/takumi-pkg.yaml").write_text("""\
+package:
+  name: api
+  version: 0.1.0
+dependencies:
+  - shared
+phases:
+  build:
+    commands:
+      - javac -cp ../shared/src src/Main.java
+""")
+        _git_commit(workdir, "add takumi")
+
+    task = (
+        "The build is broken in this Java project. Compiling gives a type "
+        "error. Find the bug, fix it, and verify it compiles. "
+        "Call task_complete when done."
+    )
+
+    def verify(wd, metrics):
+        checks = {}
+        score = 0.0
+
+        # 1. javac passes (0.4)
+        r = subprocess.run(
+            "javac -cp ../shared/src src/Main.java",
+            shell=True, cwd=f"{wd}/api",
+            capture_output=True, text=True,
+        )
+        checks["build_passes"] = r.returncode == 0
+        if checks["build_passes"]:
+            score += 0.4
+
+        # 2. Fix is in the right file (0.2)
+        try:
+            source = Path(f"{wd}/api/src/Main.java").read_text()
+            checks["correct_file"] = 'int port = "8080"' not in source
+        except Exception:
+            checks["correct_file"] = False
+        if checks["correct_file"]:
+            score += 0.2
+
+        # 3. Fix is correct (0.2)
+        checks["correct_fix"] = False
+        if checks["correct_file"]:
+            if any(p in source for p in (
+                "int port = 8080",
+                'String port = "8080"',
+                "Integer.parseInt(",
+                "int port = Integer",
+            )):
+                checks["correct_fix"] = True
+                score += 0.2
+
+        # 4. shared still compiles (0.2)
+        r2 = subprocess.run(
+            "javac src/Lib.java", shell=True, cwd=f"{wd}/shared",
+            capture_output=True, text=True,
+        )
+        checks["no_collateral"] = r2.returncode == 0
+        if checks["no_collateral"]:
+            score += 0.2
+
+        return {"passed": checks["build_passes"] and checks.get("correct_fix", False), "score": score, "checks": checks}
+
+    return {"task": task, "verify": verify}
+
+
+def setup_scoped_rebuild_java(workdir, with_takumi):
+    """
+    Scenario: 3-package Java project. shared was just modified.
+    Agent must figure out what's affected and build only those.
+    """
+    for pkg in ("shared", "api", "web"):
+        os.makedirs(f"{workdir}/{pkg}/src")
+
+    Path(f"{workdir}/shared/src/Lib.java").write_text("""\
+public class Lib {
+    public static String version() { return "1.0"; }
+}
+""")
+    Path(f"{workdir}/api/src/Main.java").write_text("""\
+public class Main {
+    public static void main(String[] args) {
+        System.out.println("api " + Lib.version());
+    }
+}
+""")
+    Path(f"{workdir}/web/src/Main.java").write_text("""\
+public class Main {
+    public static void main(String[] args) {
+        System.out.println("web " + Lib.version());
+    }
+}
+""")
+
+    _git_init(workdir)
+
+    if with_takumi:
+        _takumi_init(workdir)
+        os.remove(f"{workdir}/takumi-pkg.yaml")
+        Path(f"{workdir}/takumi.yaml").write_text(
+            "workspace:\n  name: myapp\n  ignore:\n    - '*.class'\n"
+        )
+        for pkg, deps in [("shared", []), ("api", ["shared"]), ("web", ["shared"])]:
+            dep_yaml = ""
+            if deps:
+                dep_yaml = "dependencies:\n" + "".join(f"  - {d}\n" for d in deps)
+            if deps:
+                Path(f"{workdir}/{pkg}/takumi-pkg.yaml").write_text(
+                    f"package:\n  name: {pkg}\n  version: 0.1.0\n{dep_yaml}"
+                    f"phases:\n  build:\n    commands:\n"
+                    f"      - javac -cp ../shared/src src/Main.java\n"
+                )
+            else:
+                Path(f"{workdir}/{pkg}/takumi-pkg.yaml").write_text(
+                    f"package:\n  name: {pkg}\n  version: 0.1.0\n"
+                    f"phases:\n  build:\n    commands:\n"
+                    f"      - javac src/Lib.java\n"
+                )
+        _git_commit(workdir, "add takumi")
+
+    # Make a change to shared after baseline
+    Path(f"{workdir}/shared/src/Lib.java").write_text("""\
+public class Lib {
+    public static String version() { return "2.0"; }
+}
+""")
+
+    task = (
+        "I just changed the shared library in this Java project. Figure out "
+        "which packages are affected by this change and build only those — "
+        "don't rebuild anything that hasn't changed. Call task_complete when done."
+    )
+
+    def verify(wd, metrics):
+        checks = {}
+        score = 0.0
+
+        # 1. All packages compile (0.3)
+        all_ok = True
+        for pkg in ("api", "web"):
+            r = subprocess.run(
+                f"javac -cp ../shared/src src/Main.java",
+                shell=True, cwd=f"{wd}/{pkg}",
+                capture_output=True, text=True,
+            )
+            if r.returncode != 0:
+                all_ok = False
+        checks["all_compile"] = all_ok
+        if all_ok:
+            score += 0.3
+
+        # 2. Agent identified affected packages (0.3)
+        transcript_text = " ".join(
+            e.get("output", "") + " " + e.get("text", "") + " " +
+            e.get("input", {}).get("summary", "") + " " +
+            e.get("input", {}).get("command", "")
+            for e in metrics.transcript
+        ).lower()
+        dep_words = ("affected", "depend", "import", "←", "<-", "downstream", "consumer", "classpath")
+        found_api = "api" in transcript_text and any(w in transcript_text for w in dep_words)
+        found_web = "web" in transcript_text and any(w in transcript_text for w in dep_words)
+        checks["identified_affected"] = found_api and found_web
+        if checks["identified_affected"]:
+            score += 0.3
+
+        # 3. Agent scoped its work (0.4)
+        run_commands = [
+            e.get("input", {}).get("command", "")
+            for e in metrics.transcript if e.get("tool") == "run_command"
+        ]
+        used_affected = any("affected" in cmd for cmd in run_commands)
+        used_targeted = any(
+            pkg in cmd for cmd in run_commands
+            for pkg in ("shared", "api", "web")
+            if ("javac" in cmd or "takumi" in cmd or "build" in cmd)
+        )
+        checks["scoped_build"] = used_affected or used_targeted
+        if checks["scoped_build"]:
+            score += 0.4
+
+        passed = all_ok and checks["identified_affected"]
+        return {"passed": passed, "score": score, "checks": checks}
+
+    return {"task": task, "verify": verify}
+
+
+def setup_understand_structure_java(workdir, with_takumi):
+    """
+    Scenario: 4-package Java project with a diamond dependency.
+    Agent must explain the dependency structure and build order.
+    """
+    for pkg in ("core", "auth", "api", "gateway"):
+        os.makedirs(f"{workdir}/{pkg}/src")
+
+    Path(f"{workdir}/core/src/Core.java").write_text("""\
+public class Core {
+    public static void init() { System.out.println("core"); }
+}
+""")
+    Path(f"{workdir}/auth/src/Auth.java").write_text("""\
+public class Auth {
+    public static void init() { Core.init(); System.out.println("auth"); }
+}
+""")
+    Path(f"{workdir}/api/src/Api.java").write_text("""\
+public class Api {
+    public static void init() { Core.init(); System.out.println("api"); }
+}
+""")
+    Path(f"{workdir}/gateway/src/Gateway.java").write_text("""\
+public class Gateway {
+    public static void main(String[] args) {
+        Auth.init();
+        Api.init();
+        System.out.println("gateway");
+    }
+}
+""")
+
+    _git_init(workdir)
+
+    if with_takumi:
+        _takumi_init(workdir)
+        os.remove(f"{workdir}/takumi-pkg.yaml")
+        Path(f"{workdir}/takumi.yaml").write_text(
+            "workspace:\n  name: platform\n  ignore:\n    - '*.class'\n"
+        )
+        configs = {
+            "core": ([], "javac src/Core.java"),
+            "auth": (["core"], "javac -cp ../core/src src/Auth.java"),
+            "api": (["core"], "javac -cp ../core/src src/Api.java"),
+            "gateway": (["auth", "api"], "javac -cp ../core/src:../auth/src:../api/src src/Gateway.java"),
+        }
+        for pkg, (deps, build_cmd) in configs.items():
+            dep_yaml = ""
+            if deps:
+                dep_yaml = "dependencies:\n" + "".join(f"  - {d}\n" for d in deps)
+            Path(f"{workdir}/{pkg}/takumi-pkg.yaml").write_text(
+                f"package:\n  name: {pkg}\n  version: 0.1.0\n{dep_yaml}"
+                f"phases:\n  build:\n    commands:\n      - {build_cmd}\n"
+            )
+        _git_commit(workdir, "add takumi")
+
+    task = (
+        "I'm new to this Java project. Explain the dependency structure: "
         "which packages depend on which, and what order should they be "
         "built in? Call task_complete when done."
     )
@@ -1342,6 +2017,50 @@ SCENARIOS = {
         "setup": setup_understand_structure_ts,
         "group": "understand-structure",
         "lang": "TypeScript",
+    },
+    # Rust
+    "fix-build-error-rust": {
+        "name": "Fix Build Error (Rust)",
+        "desc": "Find and fix a type error in a Rust workspace",
+        "setup": setup_fix_build_error_rust,
+        "group": "fix-build-error",
+        "lang": "Rust",
+    },
+    "scoped-rebuild-rust": {
+        "name": "Scoped Rebuild (Rust)",
+        "desc": "After changing shared crate, build only affected Rust crates",
+        "setup": setup_scoped_rebuild_rust,
+        "group": "scoped-rebuild",
+        "lang": "Rust",
+    },
+    "understand-structure-rust": {
+        "name": "Understand Structure (Rust)",
+        "desc": "Explain dependency graph and build order of a Rust workspace",
+        "setup": setup_understand_structure_rust,
+        "group": "understand-structure",
+        "lang": "Rust",
+    },
+    # Java
+    "fix-build-error-java": {
+        "name": "Fix Build Error (Java)",
+        "desc": "Find and fix a type error in a Java project",
+        "setup": setup_fix_build_error_java,
+        "group": "fix-build-error",
+        "lang": "Java",
+    },
+    "scoped-rebuild-java": {
+        "name": "Scoped Rebuild (Java)",
+        "desc": "After changing shared lib, build only affected Java packages",
+        "setup": setup_scoped_rebuild_java,
+        "group": "scoped-rebuild",
+        "lang": "Java",
+    },
+    "understand-structure-java": {
+        "name": "Understand Structure (Java)",
+        "desc": "Explain dependency graph and build order of a Java project",
+        "setup": setup_understand_structure_java,
+        "group": "understand-structure",
+        "lang": "Java",
     },
 }
 
