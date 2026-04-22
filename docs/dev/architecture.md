@@ -1,5 +1,7 @@
 # Architecture
 
+See also: [Architecture Diagrams](architecture-diagram.md) — visual system overview, execution pipeline, cache strategy, and agent integration sequence.
+
 ## Overview
 
 Takumi is a CLI tool written in Go. It uses Cobra for command routing, YAML for configuration, and a content-addressed cache for incremental builds. The binary is self-contained with no external dependencies.
