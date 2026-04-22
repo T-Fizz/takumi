@@ -19,7 +19,7 @@ workspace:
   settings:
     parallel: <bool>       # Enable parallel builds (default: true)
   ai:
-    agent: <string>        # AI agent (claude, cursor, copilot, windsurf, cline)
+    agent: <string>        # AI agent (claude, cursor, copilot, windsurf, cline, kiro)
     instructions: <string> # Path to takumi-ai.yaml
 ```
 
