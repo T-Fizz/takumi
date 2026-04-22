@@ -57,6 +57,7 @@ jobs:
           ## Developer Docs
 
           - [[Architecture]]
+          - [[Benchmarks]] — Performance results by version
           - [[Packages]]
           - [[Testing]]
           - [[Contributing]]
@@ -73,6 +74,7 @@ jobs:
 
           **Developer Docs**
           - [[Architecture]]
+          - [[Benchmarks]]
           - [[Packages]]
           - [[Testing]]
           - [[Contributing]]
