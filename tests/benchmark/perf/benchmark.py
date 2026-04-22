@@ -20,6 +20,19 @@ Usage:
 
 Or from repo root:
   make benchmark-perf
+
+TODO: Future improvements
+  - fix-build-error Python/Go token regression: operator prompt overhead
+    outweighs call savings for simple bugs. Consider trimming prompt for
+    fix-build-error scenarios or making the prompt adaptive.
+  - Haiku variance on fix-build-error: agent sometimes tries invalid
+    commands (e.g. `takumi runtime`) or re-reads files after fix. May
+    stabilize with Sonnet/Opus. Run multi-model CI to confirm.
+  - scoped-rebuild TS: 13 calls vs 4 for other languages. Agent reads
+    and rewrites tsconfig.json files. May need TS-specific build config
+    in the scenario or better composite project references.
+  - Average across N runs per scenario to reduce variance noise.
+  - Add `deploy` and `lint` phase scenarios.
 """
 
 import json
