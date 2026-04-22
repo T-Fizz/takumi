@@ -264,136 +264,6 @@ func TestHandleBuild_RecordsMetrics(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// handleDiagnose tests
-// ---------------------------------------------------------------------------
-
-func TestHandleDiagnose_WithLogFile(t *testing.T) {
-	dir := setupWorkspace(t)
-
-	// Create a build log
-	logContent := `# takumi build my-pkg
-# started: 2026-01-01T00:00:00Z
-# cwd: /test
-
-$ echo "building"
-building
-
-# exit code: 1
-# duration: 500ms
-`
-	os.WriteFile(filepath.Join(dir, ".takumi", "logs", "my-pkg.build.log"), []byte(logContent), 0644)
-
-	result, err := handleDiagnose(context.Background(), makeRequest(map[string]any{
-		"package": "my-pkg",
-	}))
-	require.NoError(t, err)
-	require.False(t, result.IsError)
-
-	text := result.Content[0].(gomcp.TextContent).Text
-	assert.Contains(t, text, "Diagnosis for my-pkg")
-	assert.Contains(t, text, "Phase: build")
-	assert.Contains(t, text, "Exit code: 1")
-	assert.Contains(t, text, "my-pkg.build.log")
-}
-
-func TestHandleDiagnose_NoLogFiles(t *testing.T) {
-	setupWorkspace(t)
-	result, err := handleDiagnose(context.Background(), makeRequest(map[string]any{
-		"package": "my-pkg",
-	}))
-	require.NoError(t, err)
-	require.False(t, result.IsError)
-
-	text := result.Content[0].(gomcp.TextContent).Text
-	assert.Contains(t, text, "No log files found")
-}
-
-func TestHandleDiagnose_PackageNotFound(t *testing.T) {
-	setupWorkspace(t)
-	result, err := handleDiagnose(context.Background(), makeRequest(map[string]any{
-		"package": "nonexistent",
-	}))
-	require.NoError(t, err)
-	assert.True(t, result.IsError)
-	text := result.Content[0].(gomcp.TextContent).Text
-	assert.Contains(t, text, "package not found")
-}
-
-func TestHandleDiagnose_MissingParam(t *testing.T) {
-	setupWorkspace(t)
-	result, err := handleDiagnose(context.Background(), makeRequest(nil))
-	require.NoError(t, err)
-	assert.True(t, result.IsError)
-}
-
-func TestHandleDiagnose_PrefersFailingLog(t *testing.T) {
-	dir := setupWorkspace(t)
-
-	// Build failed, test passed — diagnose should pick the failing build log
-	os.WriteFile(filepath.Join(dir, ".takumi", "logs", "my-pkg.build.log"), []byte("build error output\n# exit code: 1\n"), 0644)
-	os.WriteFile(filepath.Join(dir, ".takumi", "logs", "my-pkg.test.log"), []byte("tests passed\n# exit code: 0\n"), 0644)
-
-	result, err := handleDiagnose(context.Background(), makeRequest(map[string]any{
-		"package": "my-pkg",
-	}))
-	require.NoError(t, err)
-	text := result.Content[0].(gomcp.TextContent).Text
-	assert.Contains(t, text, "Phase: build")
-	assert.Contains(t, text, "Exit code: 1")
-}
-
-func TestHandleDiagnose_PrefersFailingTest(t *testing.T) {
-	dir := setupWorkspace(t)
-
-	// Build passed, test failed — diagnose should pick the failing test log
-	os.WriteFile(filepath.Join(dir, ".takumi", "logs", "my-pkg.build.log"), []byte("build ok\n# exit code: 0\n"), 0644)
-	os.WriteFile(filepath.Join(dir, ".takumi", "logs", "my-pkg.test.log"), []byte("FAIL\n# exit code: 2\n"), 0644)
-
-	result, err := handleDiagnose(context.Background(), makeRequest(map[string]any{
-		"package": "my-pkg",
-	}))
-	require.NoError(t, err)
-	text := result.Content[0].(gomcp.TextContent).Text
-	assert.Contains(t, text, "Phase: test")
-	assert.Contains(t, text, "Exit code: 2")
-}
-
-func TestHandleDiagnose_BothPassingFallsBackToNewest(t *testing.T) {
-	dir := setupWorkspace(t)
-
-	// Both passed — should fall back to the newest log
-	os.WriteFile(filepath.Join(dir, ".takumi", "logs", "my-pkg.build.log"), []byte("build ok\n# exit code: 0\n"), 0644)
-	// Touch test log to be newer
-	os.WriteFile(filepath.Join(dir, ".takumi", "logs", "my-pkg.test.log"), []byte("tests ok\n# exit code: 0\n"), 0644)
-
-	result, err := handleDiagnose(context.Background(), makeRequest(map[string]any{
-		"package": "my-pkg",
-	}))
-	require.NoError(t, err)
-	text := result.Content[0].(gomcp.TextContent).Text
-	// Should return something — doesn't matter which phase, just shouldn't fail
-	assert.Contains(t, text, "Phase:")
-	assert.Contains(t, text, "Exit code: 0")
-}
-
-func TestHandleDiagnose_ExplicitPhase(t *testing.T) {
-	dir := setupWorkspace(t)
-
-	// Both exist, test is failing — but agent explicitly asks for build
-	os.WriteFile(filepath.Join(dir, ".takumi", "logs", "my-pkg.build.log"), []byte("build ok\n# exit code: 0\n"), 0644)
-	os.WriteFile(filepath.Join(dir, ".takumi", "logs", "my-pkg.test.log"), []byte("FAIL\n# exit code: 1\n"), 0644)
-
-	result, err := handleDiagnose(context.Background(), makeRequest(map[string]any{
-		"package": "my-pkg",
-		"phase":   "build",
-	}))
-	require.NoError(t, err)
-	text := result.Content[0].(gomcp.TextContent).Text
-	assert.Contains(t, text, "Phase: build")
-	assert.Contains(t, text, "Exit code: 0")
-}
-
-// ---------------------------------------------------------------------------
 // handleValidate tests
 // ---------------------------------------------------------------------------
 
@@ -596,7 +466,6 @@ func TestToolDefinitions(t *testing.T) {
 		{statusTool, "takumi_status"},
 		{buildTool, "takumi_build"},
 		{testTool, "takumi_test"},
-		{diagnoseTool, "takumi_diagnose"},
 		{affectedTool, "takumi_affected"},
 		{validateTool, "takumi_validate"},
 		{graphTool, "takumi_graph"},
@@ -606,49 +475,6 @@ func TestToolDefinitions(t *testing.T) {
 		assert.Equal(t, tt.name, tt.tool.Name, "tool name mismatch")
 		assert.NotEmpty(t, tt.tool.Description, "tool %s should have description", tt.name)
 	}
-}
-
-func TestDiagnoseToolRequiresPackage(t *testing.T) {
-	assert.Contains(t, diagnoseTool.InputSchema.Required, "package")
-}
-
-// ---------------------------------------------------------------------------
-// handleDiagnose with runtime
-// ---------------------------------------------------------------------------
-
-func TestHandleDiagnose_WithRuntime(t *testing.T) {
-	dir := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, ".takumi", "logs"), 0755))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "takumi.yaml"), []byte(`workspace:
-  name: rt-ws
-`), 0644))
-
-	pkgDir := filepath.Join(dir, "svc")
-	require.NoError(t, os.MkdirAll(pkgDir, 0755))
-	require.NoError(t, os.WriteFile(filepath.Join(pkgDir, "takumi-pkg.yaml"), []byte(`package:
-  name: svc
-  version: 0.1.0
-runtime:
-  setup:
-    - echo setup
-  env:
-    PATH: "{{env_dir}}/bin:$PATH"
-`), 0644))
-
-	// Write a log file
-	os.WriteFile(filepath.Join(dir, ".takumi", "logs", "svc.build.log"), []byte("# exit code: 1\n"), 0644)
-
-	origDir, _ := os.Getwd()
-	os.Chdir(dir)
-	defer os.Chdir(origDir)
-
-	result, err := handleDiagnose(context.Background(), makeRequest(map[string]any{
-		"package": "svc",
-	}))
-	require.NoError(t, err)
-	text := result.Content[0].(gomcp.TextContent).Text
-	assert.Contains(t, text, "Runtime:")
-	assert.Contains(t, text, "not set up")
 }
 
 // ---------------------------------------------------------------------------
@@ -1068,47 +894,6 @@ func TestGitChangedFiles_WithChanges(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// handleDiagnose — runtime configured and setup
-// ---------------------------------------------------------------------------
-
-func TestHandleDiagnose_WithRuntimeSetUp(t *testing.T) {
-	dir := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, ".takumi", "logs"), 0755))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "takumi.yaml"), []byte(`workspace:
-  name: rt-ws
-`), 0644))
-
-	pkgDir := filepath.Join(dir, "svc")
-	require.NoError(t, os.MkdirAll(pkgDir, 0755))
-	require.NoError(t, os.WriteFile(filepath.Join(pkgDir, "takumi-pkg.yaml"), []byte(`package:
-  name: svc
-  version: 0.1.0
-runtime:
-  setup:
-    - echo setup
-`), 0644))
-
-	// Create env dir (simulating that env setup was run)
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, ".takumi", "envs", "svc"), 0755))
-
-	// Write a log file
-	os.WriteFile(filepath.Join(dir, ".takumi", "logs", "svc.build.log"), []byte("# exit code: 0\n# duration: 100ms\n"), 0644)
-
-	origDir, _ := os.Getwd()
-	os.Chdir(dir)
-	defer os.Chdir(origDir)
-
-	result, err := handleDiagnose(context.Background(), makeRequest(map[string]any{
-		"package": "svc",
-	}))
-	require.NoError(t, err)
-	text := result.Content[0].(gomcp.TextContent).Text
-	assert.Contains(t, text, "Runtime: configured")
-	assert.Contains(t, text, "env dir:")
-	assert.Contains(t, text, "Duration: 100ms")
-}
-
-// ---------------------------------------------------------------------------
 // handlePhase — affected with git failure
 // ---------------------------------------------------------------------------
 
@@ -1134,28 +919,6 @@ func TestHandleAffected_GitError(t *testing.T) {
 	assert.True(t, result.IsError)
 	text := result.Content[0].(gomcp.TextContent).Text
 	assert.Contains(t, text, "failed to get changed files")
-}
-
-// ---------------------------------------------------------------------------
-// handleDiagnose — with changed files (git-backed)
-// ---------------------------------------------------------------------------
-
-func TestHandleDiagnose_WithChangedFiles(t *testing.T) {
-	dir := setupGitWorkspace(t)
-
-	// Modify a file
-	os.WriteFile(filepath.Join(dir, "lib", "main.go"), []byte("package lib\n// changed\n"), 0644)
-
-	// Create a log file
-	os.WriteFile(filepath.Join(dir, ".takumi", "logs", "lib.build.log"), []byte("# exit code: 1\n"), 0644)
-
-	result, err := handleDiagnose(context.Background(), makeRequest(map[string]any{
-		"package": "lib",
-	}))
-	require.NoError(t, err)
-	text := result.Content[0].(gomcp.TextContent).Text
-	assert.Contains(t, text, "Changed files:")
-	assert.Contains(t, text, "lib/main.go")
 }
 
 // ---------------------------------------------------------------------------

@@ -6,7 +6,7 @@ Start MCP server over stdio
 
 Start a Model Context Protocol server that exposes takumi workspace
 tools over stdio. Configure in your AI agent's MCP settings to give
-the agent direct access to build, test, diagnose, and other operations.
+the agent direct access to build, test, and other operations.
 
 ```
 takumi mcp serve [flags]

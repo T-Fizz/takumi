@@ -210,8 +210,8 @@ tests:
           1. Running `takumi status` in a bare project gives the agent enough
              guidance to know what to do next (should mention `takumi init`)
           2. After init, the generated TAKUMI.md contains a COMPLETE command
-             reference (build, test, run, affected, graph, validate, diagnose,
-             env setup, init — all 9+ commands)
+             reference (build, test, affected, graph, validate, review,
+             env setup, init — all key commands)
           3. The agent can set up per-package configs for a polyglot project
           4. All Takumi operations work (validate, graph, build, test, affected)
           5. Caching works without any extra configuration
@@ -255,7 +255,7 @@ tests:
              `takumi status` (CLI) as a first step
           2. If no workspace exists, the agent needs clear guidance on what to do
           3. After setup, the agent should follow the operator workflow:
-             status → affected → build --affected → test --affected → diagnose on failure
+             status → affected → build --affected → test --affected → read logs on failure
 
           Rate this scenario on REALISM:
           - Does the discovery flow (status → init → configure → build) match

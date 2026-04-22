@@ -1,6 +1,6 @@
 // Package mcp_test contains end-to-end integration tests for Takumi's MCP server.
 // Each scenario simulates a full agent workflow: setup → build → test → break →
-// diagnose → fix → ship. Tests go through the real MCP server dispatch path
+// fix → ship. Tests go through the real MCP server dispatch path
 // (NewServer + HandleMessage) rather than calling handlers directly.
 package mcp_test
 
@@ -142,7 +142,7 @@ func toolToCmd(toolName string, args map[string]any) string {
 	sub := strings.TrimPrefix(toolName, "takumi_")
 	parts := []string{"t", sub}
 
-	// "package" is a positional arg for diagnose
+	// "package" is a positional arg for some tools
 	if pkg, ok := args["package"]; ok {
 		parts = append(parts, fmt.Sprintf("%v", pkg))
 	}
@@ -366,19 +366,7 @@ phases:
 		assert.Contains(t, text, "Failed package logs")
 	})
 
-	// ── Step 13: Agent diagnoses the failure ───────────────────────────
-	tr.stepHeader("Agent diagnoses the failure")
-	t.Run("diagnose_failure", func(t *testing.T) {
-		args := map[string]any{"package": "user-svc"}
-		text, isErr := tcall(t, tr, "takumi_diagnose", args)
-		assert.False(t, isErr)
-		assert.Contains(t, text, "Diagnosis for user-svc")
-		assert.Contains(t, text, "Phase: test")
-		assert.Contains(t, text, "user-svc.test.log")
-		assert.Contains(t, text, "Changed files")
-	})
-
-	// ── Step 14: Agent fixes the test ──────────────────────────────────
+	// ── Step 13: Agent fixes the test ──────────────────────────────────
 	tr.stepHeader("Agent fixes the test — bumps version, fixes test command")
 	os.WriteFile(filepath.Join(svcDir, "takumi-pkg.yaml"), []byte(`package:
   name: user-svc
@@ -830,21 +818,7 @@ phases:
 		assert.Contains(t, text, "frontend")
 	})
 
-	// ── Step 14: Agent diagnoses the build failure ─────────────────────
-	tr.stepHeader("Agent diagnoses the build failure")
-	t.Run("diagnose_build_failure", func(t *testing.T) {
-		args := map[string]any{"package": "frontend"}
-		text, isErr := tcall(t, tr, "takumi_diagnose", args)
-		assert.False(t, isErr)
-		assert.Contains(t, text, "Diagnosis for frontend")
-		assert.Contains(t, text, "Phase: build")
-		assert.Contains(t, text, "Exit code: 1")
-		assert.Contains(t, text, "frontend.build.log")
-		assert.Contains(t, text, "Changed files")
-		assert.Contains(t, text, "Dependencies: types")
-	})
-
-	// ── Step 15: Agent fixes the build ─────────────────────────────────
+	// ── Step 14: Agent fixes the build ─────────────────────────────────
 	tr.stepHeader("Agent fixes the build error")
 	os.WriteFile(filepath.Join(frontendDir, "takumi-pkg.yaml"), []byte(`package:
   name: frontend

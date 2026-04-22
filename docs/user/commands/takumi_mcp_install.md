@@ -5,7 +5,7 @@ Register Takumi as a global MCP server for AI agents
 ### Synopsis
 
 Register the Takumi MCP server in your AI agent's global configuration
-so that Takumi tools (status, build, test, diagnose, etc.) are available
+so that Takumi tools (status, build, test, etc.) are available
 in every project — even before running takumi init.
 
 Supports: Claude Code (claude_desktop_config.json)

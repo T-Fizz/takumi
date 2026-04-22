@@ -1,0 +1,151 @@
+# fullstack-discovery
+# simulated terminal session
+
+# ── 1. Set up fullstack workspace: backend (Python/Fly) + frontend (JS/Vercel)
+
+# Workspace: backend -> frontend, both have build/test/lint/deploy/dev phases
+
+# ── 2. Agent discovers the workspace via status
+
+$ t status
+Workspace: fullstack-app
+Root: .
+
+Packages (2):
+  backend v1.2.0 — 5 phases, runtime
+  frontend v0.8.0 — 1 deps, 5 phases, runtime
+
+AI Agent: claude
+
+# ── 3. Agent checks dependency graph — frontend depends on backend
+
+$ t graph
+Dependency Graph (2 packages, 2 levels):
+
+Level 0 (no dependencies):
+  backend
+
+Level 1:
+  frontend → backend
+
+# ── 4. Agent validates — all configs pass
+
+$ t validate
+All configurations valid.
+
+# ── 5. Status reports custom phases — agent can see deploy/lint/dev exist
+
+$ t status
+Workspace: fullstack-app
+Root: .
+
+Packages (2):
+  backend v1.2.0 — 5 phases, runtime
+  frontend v0.8.0 — 1 deps, 5 phases, runtime
+
+AI Agent: claude
+
+# ── 6. Agent builds — backend first (leaf), then frontend
+
+$ t build
+Build completed: 2 passed
+
+Results:
+  ✓ backend — 4ms (log: ./.takumi/logs/backend.build.log)
+  ✓ frontend — 3ms (log: ./.takumi/logs/frontend.build.log)
+
+# ── 7. Agent runs tests — pytest + vitest in dependency order
+
+$ t test
+Test completed: 2 passed
+
+Results:
+  ✓ backend — 4ms (log: ./.takumi/logs/backend.test.log)
+  ✓ frontend — 3ms (log: ./.takumi/logs/frontend.test.log)
+
+# ── 8. Rebuild — everything cached, no wasted cycles
+
+$ t build
+Build completed: 0 passed, 2 cached
+
+Results:
+  ✓ backend — cached
+  ✓ frontend — cached
+
+# ── 9. Modify backend — frontend should be affected too (downstream dep)
+
+# Modified backend/main.py
+
+$ t affected
+Since: HEAD
+Changed files: 1
+
+Directly affected:
+  backend
+
+Transitively affected:
+  frontend
+
+Total affected: 2 packages
+
+# ── 10. Build only affected packages
+
+$ t build --affected
+Build completed: 2 passed
+
+Results:
+  ✓ backend — 4ms (log: ./.takumi/logs/backend.build.log)
+  ✓ frontend — 4ms (log: ./.takumi/logs/frontend.build.log)
+
+# ── 11. Frontend build breaks — agent needs to investigate
+
+# Broke frontend build — missing react module
+
+$ t build
+Build failed: 0 passed, 1 failed, 1 cached
+
+Results:
+  ✓ backend — cached
+  ✗ frontend — exit code 1 (log: ./.takumi/logs/frontend.build.log)
+
+Failed package logs:
+  ./.takumi/logs/frontend.build.log
+
+# ── 12. Agent fixes the build and verifies
+
+# Fixed frontend build command
+
+$ t build
+Build completed: 0 passed, 2 cached
+
+Results:
+  ✓ backend — cached
+  ✓ frontend — cached
+
+# ── 13. Targeted build — just backend
+
+$ t build --no-cache --packages backend
+Build completed: 1 passed
+
+Results:
+  ✓ backend — 4ms (log: ./.takumi/logs/backend.build.log)
+
+# ── 14. Final status — agent has full workspace context
+
+$ t status
+Workspace: fullstack-app
+Root: .
+
+Packages (2):
+  backend v1.2.0 — 5 phases, runtime
+  frontend v0.8.0 — 1 deps, 5 phases, runtime
+
+Recent Builds:
+  ✓ frontend test 3ms
+  ✓ backend build 3ms
+  ✓ frontend build 3ms
+  ✗ frontend build 3ms
+  ✓ backend build 3ms
+
+AI Agent: claude
+

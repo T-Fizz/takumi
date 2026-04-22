@@ -179,18 +179,7 @@ phases:
 		assert.Contains(t, text, "Total affected: 3")
 	})
 
-	// ── Step 8: Diagnose a runtime-configured package — verify runtime info ──
-	tr.stepHeader("Diagnose runtime-configured package — verify runtime context is surfaced")
-	t.Run("diagnose_shows_runtime", func(t *testing.T) {
-		args := map[string]any{"package": "api"}
-		text, isErr := tcall(t, tr, "takumi_diagnose", args)
-		assert.False(t, isErr)
-		assert.Contains(t, text, "Diagnosis for api")
-		// Runtime config should be visible to the agent
-		assert.Contains(t, text, "Runtime")
-	})
-
-	// ── Step 9: Rebuild all after cascade — verify cache state ─────────
+	// ── Step 8: Rebuild all after cascade — verify cache state ─────────
 	tr.stepHeader("Rebuild all — cli changed so full cascade, verify DAG ordering holds")
 	t.Run("rebuild_after_cascade", func(t *testing.T) {
 		text, isErr := tcall(t, tr, "takumi_build", map[string]any{"no_cache": true})
@@ -213,7 +202,7 @@ phases:
 //
 // Change a leaf dependency in a way that breaks a downstream package.
 // Agent builds, sees failure in the downstream, traces it back to the
-// root cause in the leaf. Tests whether diagnose + affected give the
+// root cause in the leaf. Tests whether affected gives the
 // agent enough signal to find the actual problem, not just the symptom.
 // ---------------------------------------------------------------------------
 
@@ -345,33 +334,7 @@ phases:
 		assert.Contains(t, text, "core")
 	})
 
-	// ── Step 6: Agent diagnoses service — sees it's a build failure ────
-	tr.stepHeader("Agent diagnoses service — the symptom")
-	t.Run("diagnose_symptom", func(t *testing.T) {
-		args := map[string]any{"package": "service"}
-		text, isErr := tcall(t, tr, "takumi_diagnose", args)
-		assert.False(t, isErr)
-		assert.Contains(t, text, "Diagnosis for service")
-		assert.Contains(t, text, "Phase: build")
-		assert.Contains(t, text, "Exit code: 1")
-		// Should show the dependency on core — key signal for root cause
-		assert.Contains(t, text, "Dependencies: core")
-		// Should show changed files that include core
-		assert.Contains(t, text, "Changed files")
-		assert.Contains(t, text, "core/lib.go")
-	})
-
-	// ── Step 7: Agent diagnoses core — it built fine ───────────────────
-	tr.stepHeader("Agent diagnoses core — the root cause package (built fine)")
-	t.Run("diagnose_root_cause", func(t *testing.T) {
-		args := map[string]any{"package": "core"}
-		text, isErr := tcall(t, tr, "takumi_diagnose", args)
-		assert.False(t, isErr)
-		assert.Contains(t, text, "Diagnosis for core")
-		assert.Contains(t, text, "Exit code: 0")
-	})
-
-	// ── Step 8: Agent fixes service to use new API ─────────────────────
+	// ── Step 6: Agent fixes service to use new API ─────────────────────
 	tr.stepHeader("Agent fixes service to use core's new API")
 	os.WriteFile(filepath.Join(svcDir, "takumi-pkg.yaml"), []byte(`package:
   name: service
@@ -754,17 +717,10 @@ phases:
 		assert.Contains(t, text, "2 cached")
 	})
 
-	// ── Step 10: Delete .takumi/logs/ — diagnose handles gracefully ───
-	tr.stepHeader("Delete .takumi/logs/ — diagnose should handle gracefully")
+	// ── Step 10: Delete .takumi/logs/ — verify rebuild recreates them ──
+	tr.stepHeader("Delete .takumi/logs/ — rebuild should recreate")
 	os.RemoveAll(filepath.Join(dir, ".takumi", "logs"))
 	tr.action("Removed .takumi/logs/ directory entirely")
-
-	t.Run("diagnose_no_logs_dir", func(t *testing.T) {
-		args := map[string]any{"package": "alpha"}
-		text, isErr := tcall(t, tr, "takumi_diagnose", args)
-		assert.False(t, isErr) // diagnose shouldn't crash
-		assert.Contains(t, text, "No log files found")
-	})
 
 	// ── Step 11: Rebuild creates the logs again ────────────────────────
 	tr.stepHeader("Rebuild — logs directory recreated")
@@ -1042,16 +998,6 @@ phases:
 		assert.Contains(t, text, "worker")
 		// lib should be cached from step 3
 		assert.Contains(t, text, "cached")
-	})
-
-	// ── Step 6: Agent diagnoses and fixes the worker ───────────────────
-	tr.stepHeader("Agent diagnoses worker failure, then fixes the build")
-	t.Run("diagnose_worker_failure", func(t *testing.T) {
-		args := map[string]any{"package": "worker"}
-		text, isErr := tcall(t, tr, "takumi_diagnose", args)
-		assert.False(t, isErr)
-		assert.Contains(t, text, "Diagnosis for worker")
-		assert.Contains(t, text, "Exit code: 1")
 	})
 
 	os.WriteFile(filepath.Join(workerDir, "takumi-pkg.yaml"), []byte(`package:
@@ -1338,7 +1284,7 @@ ai:
 	})
 
 	// ── Step 11: Break the frontend build ──────────────────────────
-	tr.stepHeader("Frontend build breaks — agent needs to diagnose")
+	tr.stepHeader("Frontend build breaks — agent needs to investigate")
 	frontendBroken := `package:
   name: frontend
   version: 0.8.0
@@ -1384,16 +1330,6 @@ ai:
 		assert.Contains(t, text, "cached")
 	})
 
-	// ── Step 12: Agent diagnoses the frontend failure ──────────────
-	tr.stepHeader("Agent diagnoses frontend — sees module error and AI notes")
-	t.Run("diagnose_frontend", func(t *testing.T) {
-		text, isErr := tcall(t, tr, "takumi_diagnose", map[string]any{"package": "frontend"})
-		assert.False(t, isErr)
-		assert.Contains(t, text, "Diagnosis for frontend")
-		assert.Contains(t, text, "Exit code: 1")
-		assert.Contains(t, text, "Dependencies: backend")
-		assert.Contains(t, text, "Runtime: configured but not set up")
-	})
 
 	// ── Step 13: Agent fixes the build ─────────────────────────────
 	tr.stepHeader("Agent fixes the build and verifies")

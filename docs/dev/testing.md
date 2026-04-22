@@ -107,15 +107,15 @@ tests:
 
 ## E2E Simulation Tests
 
-End-to-end tests in `src/mcp/e2e_test.go` simulate full agent workflows by calling MCP tool handlers in sequence against real (temporary) workspaces. These test the complete cycle from workspace setup through build/test/diagnose/fix iterations.
+End-to-end tests in `src/mcp/e2e_test.go` simulate full agent workflows by calling MCP tool handlers in sequence against real (temporary) workspaces. These test the complete cycle from workspace setup through build/test/fix iterations.
 
 ### Scenarios
 
-**TestE2E_LocalProject** (18 steps) — A developer with an existing local project: init → status → validate → graph → build → test → cache verification → feature change → affected analysis → targeted build → test failure → diagnose → fix → green build → metrics check → final status.
+**TestE2E_LocalProject** (18 steps) — A developer with an existing local project: init → status → validate → graph → build → test → cache verification → feature change → affected analysis → targeted build → test failure → fix → green build → metrics check → final status.
 
 **TestE2E_GitHubClone** (13 steps) — A developer cloning a multi-package project from GitHub: 3-package workspace with sources → onboard → graph → validate → full build → full test → modify lib → blast radius analysis → affected build → targeted test → full test → cache → final status.
 
-**TestE2E_VibeCoder** (20 steps) — A first-time user with no coding experience: empty dir → error handling → scaffold workspace + 3 packages with dependencies → full workflow through build/test/failure/diagnose/fix cycle → ship build → build history verification.
+**TestE2E_VibeCoder** (20 steps) — A first-time user with no coding experience: empty dir → error handling → scaffold workspace + 3 packages with dependencies → full workflow through build/test/failure/fix cycle → ship build → build history verification.
 
 ### Running
 

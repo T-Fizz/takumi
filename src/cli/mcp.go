@@ -29,7 +29,7 @@ var mcpServeCmd = &cobra.Command{
 	Short: "Start MCP server over stdio",
 	Long: `Start a Model Context Protocol server that exposes takumi workspace
 tools over stdio. Configure in your AI agent's MCP settings to give
-the agent direct access to build, test, diagnose, and other operations.`,
+the agent direct access to build, test, and other operations.`,
 	RunE: runMCPServe,
 }
 
@@ -42,7 +42,7 @@ var mcpInstallCmd = &cobra.Command{
 	Use:   "install",
 	Short: "Register Takumi as a global MCP server for AI agents",
 	Long: `Register the Takumi MCP server in your AI agent's global configuration
-so that Takumi tools (status, build, test, diagnose, etc.) are available
+so that Takumi tools (status, build, test, etc.) are available
 in every project — even before running takumi init.
 
 Supports: Claude Code (claude_desktop_config.json)

@@ -1,11 +1,11 @@
-# Architecture Diagram
+# Architecture Diagrams
 
 ## System Overview
 
 ```mermaid
 graph TB
     subgraph User["User / AI Agent"]
-        CLI_USER["Terminal<br/><code>takumi build</code>"]
+        CLI_USER["Terminal<br/><code>takumi build</code><br/><code>takumi deploy</code>"]
         MCP_CLIENT["AI Agent<br/>(Claude, Cursor, etc.)"]
     end
 
@@ -24,7 +24,7 @@ graph TB
         direction TB
 
         CLI["cli<br/>Cobra command tree<br/>+ dynamic phase registration"]
-        MCP["mcp<br/>7 MCP tools<br/>(status, build, test,<br/>affected, validate, graph)"]
+        MCP["mcp<br/>6 MCP tools<br/>(status, build, test,<br/>affected, validate, graph)"]
 
         WS["workspace<br/>Detection, package<br/>discovery, git integration"]
         CFG["config<br/>YAML parsing<br/>+ validation"]
@@ -41,8 +41,10 @@ graph TB
     CLI --> EXEC
     CLI --> GRAPH
     CLI --> CACHE
+    CLI --> CFG
     CLI --> AGENT_PKG
     CLI --> UI
+    CLI --> MCP
 
     MCP --> WS
     MCP --> EXEC
@@ -96,9 +98,11 @@ graph TB
 
 ## Execution Pipeline
 
+Every phase defined in `takumi-pkg.yaml` is a first-class top-level command. `build` and `test` have static definitions (build includes a `clean` subcommand); all other phases (`deploy`, `lint`, `dev`, etc.) are discovered at startup and registered dynamically. `run` remains as a backward-compatible alias.
+
 ```mermaid
 flowchart LR
-    CMD["takumi build<br/>takumi deploy<br/>takumi lint<br/>..."]
+    CMD["takumi build<br/>takumi deploy<br/>takumi lint<br/>...any phase"]
     -->|"runPhaseCommand()"| LOAD["Load<br/>Workspace"]
     --> AFFECTED{"--affected?"}
 
@@ -126,6 +130,26 @@ flowchart LR
 
     NEXT --> METRICS["Record<br/>metrics"]
     METRICS --> SUMMARY["Print<br/>summary"]
+```
+
+## Dynamic Phase Registration
+
+```mermaid
+flowchart TB
+    EXEC_FN["Execute()"]
+    --> LOAD_WS["loadWorkspace()<br/>(silent fail if not in workspace)"]
+    --> SCAN["Scan all packages<br/>collect unique phase names"]
+    --> FILTER{"Phase is<br/>build or test?"}
+
+    FILTER -->|yes| SKIP["Skip<br/>(already registered statically)"]
+    FILTER -->|no| CHECK{"Conflicts with<br/>existing command?"}
+
+    CHECK -->|yes| SKIP2["Skip<br/>(e.g. status, init, graph)"]
+    CHECK -->|no| REGISTER["Register cobra.Command<br/>with --affected, --no-cache, --dry-run"]
+
+    REGISTER --> READY["rootCmd.Execute()<br/>deploy, lint, dev, etc. all work"]
+    SKIP --> READY
+    SKIP2 --> READY
 ```
 
 ## Cache Key Computation
@@ -184,32 +208,75 @@ graph TD
 
 ## AI Agent Integration
 
+The MCP server calls workspace and executor packages directly — it does not go through the CLI layer.
+
 ```mermaid
 sequenceDiagram
     participant Agent as AI Agent
     participant MCP as MCP Server
-    participant CLI as CLI Layer
+    participant WS as Workspace
     participant Exec as Executor
     participant FS as Filesystem
 
     Note over Agent: Reads .takumi/TAKUMI.md<br/>for workspace instructions
 
     Agent->>MCP: takumi_status()
-    MCP->>CLI: loadWorkspace()
-    CLI->>FS: Read takumi.yaml + all takumi-pkg.yaml
-    CLI-->>MCP: workspace.Info
+    MCP->>WS: Load(cwd)
+    WS->>FS: Read takumi.yaml + all takumi-pkg.yaml
+    WS-->>MCP: workspace.Info
     MCP-->>Agent: {packages, phases, health}
 
     Agent->>MCP: takumi_affected(since: "main")
-    MCP->>CLI: git diff --name-only
-    CLI-->>MCP: changed packages + dependents
+    MCP->>WS: ChangedFiles(root, "main")
+    WS->>FS: exec git diff --name-only
+    WS-->>MCP: changed packages + dependents
     MCP-->>Agent: {affected: ["api", "gateway"]}
 
-    Agent->>MCP: takumi_build(packages: ["api"])
+    Agent->>MCP: takumi_build(packages: "api")
     MCP->>Exec: Run(phase: "build", packages: ["api"])
-    Exec->>FS: Check cache
+    Exec->>FS: Check cache key
     Exec->>FS: Execute sh -c commands
     Exec->>FS: Write .takumi/logs/api.build.log
     Exec-->>MCP: Result{exitCode, duration, logFile}
     MCP-->>Agent: {status: "passed", log: ".takumi/logs/api.build.log"}
+```
+
+## Internal Dependency Graph
+
+Verified from actual Go import statements. No circular dependencies.
+
+```mermaid
+graph TD
+    CMD["cmd/takumi"] --> CLI
+
+    CLI["cli"] --> WS["workspace"]
+    CLI --> EXEC["executor"]
+    CLI --> GRAPH["graph"]
+    CLI --> CACHE["cache"]
+    CLI --> CFG["config"]
+    CLI --> MCP_PKG["mcp"]
+    CLI --> AGENT["agent"]
+    CLI --> UI["ui"]
+
+    MCP_PKG --> WS
+    MCP_PKG --> EXEC
+    MCP_PKG --> GRAPH
+    MCP_PKG --> CFG
+
+    WS --> CFG
+
+    EXEC --> CACHE
+    EXEC --> GRAPH
+    EXEC --> WS
+    EXEC --> UI
+
+    AGENT -.->|"HTTP"| EXT_API["Anthropic / OpenAI"]
+
+    classDef pkg fill:#2d2d2d,stroke:#555,color:#fff
+    classDef ext fill:#e85d04,stroke:#c44d03,color:#fff
+    classDef entry fill:#4a9eff,stroke:#2d7cd6,color:#fff
+
+    class CMD entry
+    class CLI,WS,EXEC,GRAPH,CACHE,CFG,MCP_PKG,AGENT,UI pkg
+    class EXT_API ext
 ```

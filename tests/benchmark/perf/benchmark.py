@@ -199,18 +199,18 @@ You are working in a Takumi workspace — an AI-aware, language-agnostic package
 - takumi graph     — dependency DAG with topological levels
 - takumi validate  — check configs for errors and cycles
 - takumi env setup — install deps & set up isolated runtime environments
-- takumi ai diagnose PKG — auto-triage a build/test failure
+- takumi review     — AI-powered code review of workspace changes
 
 ## Workflow
 1. takumi status — understand the workspace
 2. takumi affected — scope what changed
 3. takumi build --affected — build only what changed
 4. takumi test --affected — test only what changed
-5. On failure: takumi ai diagnose PKG — read output — fix — repeat from 3
+5. On failure: read .takumi/logs/ — fix — repeat from 3
 
 ## When NOT to use raw commands
 - See go.mod / package.json? Use takumi build, not language tools directly
-- Build failed? Use takumi ai diagnose, not reading logs manually
+- Build failed? Read .takumi/logs/<pkg>.<phase>.log for details
 - Need project structure? Use takumi graph, not grep for imports"""
 
 # ---------------------------------------------------------------------------

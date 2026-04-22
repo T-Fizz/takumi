@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -23,7 +22,6 @@ func registerTools(s *server.MCPServer) {
 	s.AddTool(statusTool, handleStatus)
 	s.AddTool(buildTool, handleBuild)
 	s.AddTool(testTool, handleTest)
-	s.AddTool(diagnoseTool, handleDiagnose)
 	s.AddTool(affectedTool, handleAffected)
 	s.AddTool(validateTool, handleValidate)
 	s.AddTool(graphTool, handleGraph)
@@ -49,12 +47,6 @@ var testTool = gomcp.NewTool("takumi_test",
 	gomcp.WithString("packages", gomcp.Description("Comma-separated package names to test. Omit to test all packages.")),
 	gomcp.WithBoolean("affected", gomcp.Description("Only test packages affected by git changes since HEAD.")),
 	gomcp.WithBoolean("no_cache", gomcp.Description("Skip cache and force re-run.")),
-)
-
-var diagnoseTool = gomcp.NewTool("takumi_diagnose",
-	gomcp.WithDescription("Diagnose a build or test failure. Returns failure context: log file path, exit code, changed files, dependency chain, and environment status."),
-	gomcp.WithString("package", gomcp.Required(), gomcp.Description("Package name to diagnose.")),
-	gomcp.WithString("phase", gomcp.Description("Phase to diagnose (e.g. 'build', 'test'). If omitted, returns the most recent failing log.")),
 )
 
 var affectedTool = gomcp.NewTool("takumi_affected",
@@ -292,115 +284,6 @@ func handlePhase(_ context.Context, request gomcp.CallToolRequest, phase string)
 	return gomcp.NewToolResultText(b.String()), nil
 }
 
-func handleDiagnose(_ context.Context, request gomcp.CallToolRequest) (*gomcp.CallToolResult, error) {
-	ws, err := loadWorkspace()
-	if err != nil {
-		return gomcp.NewToolResultError(err.Error()), nil
-	}
-
-	pkgName, err := request.RequireString("package")
-	if err != nil {
-		return gomcp.NewToolResultError("package parameter is required"), nil
-	}
-
-	pkg, exists := ws.Packages[pkgName]
-	if !exists {
-		return gomcp.NewToolResultError("package not found: " + pkgName), nil
-	}
-
-	logDir := filepath.Join(ws.Root, workspace.MarkerDir, "logs")
-	requestedPhase := request.GetString("phase", "")
-
-	// Find the right log to diagnose. Strategy:
-	// 1. If a phase was explicitly requested, use that log.
-	// 2. Otherwise, prefer the most recent failing log (non-zero exit code).
-	// 3. Fall back to the most recent log of any kind.
-	var logFile, phase string
-	if requestedPhase != "" {
-		path := filepath.Join(logDir, fmt.Sprintf("%s.%s.log", pkgName, requestedPhase))
-		if info, serr := os.Stat(path); serr == nil && info.Size() > 0 {
-			logFile = path
-			phase = requestedPhase
-		}
-	} else {
-		var fallbackFile, fallbackPhase string
-		var fallbackTime time.Time
-		for _, p := range []string{"build", "test"} {
-			path := filepath.Join(logDir, fmt.Sprintf("%s.%s.log", pkgName, p))
-			info, serr := os.Stat(path)
-			if serr != nil || info.Size() == 0 {
-				continue
-			}
-			// Track as fallback if it's the newest log
-			if fallbackFile == "" || info.ModTime().After(fallbackTime) {
-				fallbackFile = path
-				fallbackPhase = p
-				fallbackTime = info.ModTime()
-			}
-			// Prefer failing logs (non-zero exit code)
-			if exitCode := logExitCode(path); exitCode != 0 {
-				if logFile == "" || info.ModTime().After(fallbackTime) {
-					logFile = path
-					phase = p
-				}
-			}
-		}
-		if logFile == "" {
-			logFile = fallbackFile
-			phase = fallbackPhase
-		}
-	}
-
-	var b strings.Builder
-	fmt.Fprintf(&b, "Diagnosis for %s:\n\n", pkgName)
-
-	if logFile == "" {
-		fmt.Fprintln(&b, "No log files found. Run build or test first.")
-		return gomcp.NewToolResultText(b.String()), nil
-	}
-
-	fmt.Fprintf(&b, "Phase: %s\n", phase)
-	fmt.Fprintf(&b, "Log file: %s\n", logFile)
-
-	if data, rerr := os.ReadFile(logFile); rerr == nil {
-		lines := strings.Split(string(data), "\n")
-		for i := len(lines) - 1; i >= 0; i-- {
-			line := strings.TrimSpace(lines[i])
-			if strings.HasPrefix(line, "# exit code:") {
-				fmt.Fprintf(&b, "Exit code: %s\n", strings.TrimPrefix(line, "# exit code: "))
-				break
-			}
-			if strings.HasPrefix(line, "# duration:") {
-				fmt.Fprintf(&b, "Duration: %s\n", strings.TrimPrefix(line, "# duration: "))
-			}
-		}
-	}
-
-	if files, gerr := workspace.ChangedFiles(ws.Root, "HEAD"); gerr == nil && len(files) > 0 {
-		fmt.Fprintf(&b, "\nChanged files:\n")
-		for _, f := range files {
-			fmt.Fprintf(&b, "  %s\n", f)
-		}
-	}
-
-	if len(pkg.Config.Dependencies) > 0 {
-		fmt.Fprintf(&b, "\nDependencies: %s\n", strings.Join(pkg.Config.Dependencies, ", "))
-	}
-
-	if pkg.Config.Runtime != nil {
-		envDir := filepath.Join(ws.Root, workspace.MarkerDir, "envs", pkgName)
-		if _, serr := os.Stat(envDir); serr == nil {
-			fmt.Fprintf(&b, "\nRuntime: configured (env dir: %s)\n", envDir)
-		} else {
-			fmt.Fprintln(&b, "\nRuntime: configured but not set up (run takumi env setup)")
-		}
-	}
-
-	fmt.Fprintf(&b, "\nTo inspect the full log, read: %s\n", logFile)
-
-	return gomcp.NewToolResultText(b.String()), nil
-}
-
 func handleAffected(_ context.Context, request gomcp.CallToolRequest) (*gomcp.CallToolResult, error) {
 	ws, err := loadWorkspace()
 	if err != nil {
@@ -630,22 +513,3 @@ func capitalize(s string) string {
 	return strings.ToUpper(s[:1]) + s[1:]
 }
 
-// logExitCode reads the exit code trailer from a takumi log file.
-// Returns -1 if the file can't be read or has no exit code line.
-func logExitCode(path string) int {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return -1
-	}
-	lines := strings.Split(string(data), "\n")
-	for i := len(lines) - 1; i >= 0; i-- {
-		line := strings.TrimSpace(lines[i])
-		if strings.HasPrefix(line, "# exit code:") {
-			code, cerr := strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(line, "# exit code:")))
-			if cerr == nil {
-				return code
-			}
-		}
-	}
-	return -1
-}
