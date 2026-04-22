@@ -238,7 +238,7 @@ def _takumi_init(workdir):
     )
 
 
-def setup_fix_build_error(workdir, with_takumi):
+def setup_fix_build_error_go(workdir, with_takumi):
     """
     Scenario: Go monorepo with a type error in the api package.
     Agent must find and fix the bug, then verify the build passes.
@@ -359,7 +359,7 @@ phases:
     return {"task": task, "verify": verify}
 
 
-def setup_scoped_rebuild(workdir, with_takumi):
+def setup_scoped_rebuild_go(workdir, with_takumi):
     """
     Scenario: 3-package Go monorepo. shared lib was just modified.
     Agent must figure out what's affected and build only those packages.
@@ -476,9 +476,9 @@ def setup_scoped_rebuild(workdir, with_takumi):
     return {"task": task, "verify": verify}
 
 
-def setup_understand_structure(workdir, with_takumi):
+def setup_understand_structure_go(workdir, with_takumi):
     """
-    Scenario: 4-package monorepo with a diamond dependency.
+    Scenario: 4-package Go monorepo with a diamond dependency.
     Agent must explain the dependency structure and build order.
     """
     for pkg in ("core", "auth", "api", "gateway"):
@@ -516,104 +516,760 @@ def setup_understand_structure(workdir, with_takumi):
         _git_commit(workdir, "add takumi")
 
     task = (
-        "I'm new to this project. Explain the dependency structure: "
+        "I'm new to this Go project. Explain the dependency structure: "
         "which packages depend on which, and what order should they be "
         "built in? Call task_complete when done."
     )
 
     def verify(_wd, metrics):
+        return _verify_understand_structure(metrics)
+
+    return {"task": task, "verify": verify}
+
+
+# ---------------------------------------------------------------------------
+# Python scenario setup functions
+# ---------------------------------------------------------------------------
+
+def setup_fix_build_error_python(workdir, with_takumi):
+    """
+    Scenario: Python project with a TypeError in the api package.
+    Agent must find and fix the bug, then verify it runs.
+    """
+    os.makedirs(f"{workdir}/shared")
+    Path(f"{workdir}/shared/__init__.py").write_text("")
+    Path(f"{workdir}/shared/lib.py").write_text(
+        'def greet(name):\n    return "Hello, " + name\n'
+    )
+
+    os.makedirs(f"{workdir}/api")
+    Path(f"{workdir}/api/__init__.py").write_text("")
+    # Bug: string + int → TypeError
+    Path(f"{workdir}/api/main.py").write_text("""\
+import sys
+sys.path.insert(0, ".")
+from shared.lib import greet
+
+def run():
+    msg = greet("World")
+    port = 8080
+    print("Server on port " + port)
+    return msg
+
+if __name__ == "__main__":
+    run()
+""")
+
+    _git_init(workdir)
+
+    if with_takumi:
+        _takumi_init(workdir)
+        os.remove(f"{workdir}/takumi-pkg.yaml")
+        Path(f"{workdir}/takumi.yaml").write_text(
+            "workspace:\n  name: myapp\n  ignore:\n    - __pycache__/\n"
+        )
+        Path(f"{workdir}/shared/takumi-pkg.yaml").write_text("""\
+package:
+  name: shared
+  version: 0.1.0
+phases:
+  build:
+    commands:
+      - python -m py_compile shared/lib.py
+  test:
+    commands:
+      - python -c "from shared.lib import greet; assert greet('X') == 'Hello, X'"
+""")
+        Path(f"{workdir}/api/takumi-pkg.yaml").write_text("""\
+package:
+  name: api
+  version: 0.1.0
+dependencies:
+  - shared
+phases:
+  build:
+    commands:
+      - python api/main.py
+  test:
+    commands:
+      - python api/main.py
+""")
+        os.makedirs(f"{workdir}/__pycache__", exist_ok=True)
+        _git_commit(workdir, "add takumi")
+
+    task = (
+        "The build is broken in this Python project. Running the api package "
+        "crashes with an error. Find the bug, fix it, and verify it runs. "
+        "Call task_complete when done."
+    )
+
+    def verify(wd, metrics):
         checks = {}
         score = 0.0
 
-        # Gather ALL text: assistant messages, tool output, task_complete summaries
-        text = " ".join(
-            e.get("text", "") + " " +
-            e.get("output", "") + " " +
+        # 1. api/main.py runs without error (0.4)
+        r = subprocess.run(
+            "python api/main.py", shell=True, cwd=wd,
+            capture_output=True, text=True,
+        )
+        checks["runs_ok"] = r.returncode == 0
+        if checks["runs_ok"]:
+            score += 0.4
+
+        # 2. Fix is in the right file (0.2)
+        try:
+            source = Path(f"{wd}/api/main.py").read_text()
+            checks["correct_file"] = '"Server on port " + port' not in source
+        except Exception:
+            checks["correct_file"] = False
+        if checks["correct_file"]:
+            score += 0.2
+
+        # 3. Fix is correct — str(port), f-string, or str concat (0.2)
+        checks["correct_fix"] = False
+        if checks["correct_file"]:
+            if any(p in source for p in (
+                "str(port)", 'f"Server', "f'Server",
+                '"Server on port " + str(', "Server on port {",
+            )):
+                checks["correct_fix"] = True
+                score += 0.2
+
+        # 4. shared still works (0.2)
+        r2 = subprocess.run(
+            'python -c "from shared.lib import greet; assert greet(\'X\') == \'Hello, X\'"',
+            shell=True, cwd=wd, capture_output=True, text=True,
+        )
+        checks["no_collateral"] = r2.returncode == 0
+        if checks["no_collateral"]:
+            score += 0.2
+
+        return {"passed": checks["runs_ok"] and checks.get("correct_fix", False), "score": score, "checks": checks}
+
+    return {"task": task, "verify": verify}
+
+
+def setup_scoped_rebuild_python(workdir, with_takumi):
+    """
+    Scenario: 3-package Python project. shared lib was just modified.
+    Agent must figure out what's affected and rebuild only those.
+    """
+    for pkg in ("shared", "api", "web"):
+        os.makedirs(f"{workdir}/{pkg}")
+        Path(f"{workdir}/{pkg}/__init__.py").write_text("")
+
+    Path(f"{workdir}/shared/lib.py").write_text(
+        'VERSION = "1.0"\n\ndef get_version():\n    return VERSION\n'
+    )
+    Path(f"{workdir}/api/main.py").write_text(
+        'import sys\nsys.path.insert(0, ".")\n'
+        'from shared.lib import get_version\n\n'
+        'def run():\n    print(f"api {get_version()}")\n\n'
+        'if __name__ == "__main__":\n    run()\n'
+    )
+    Path(f"{workdir}/web/main.py").write_text(
+        'import sys\nsys.path.insert(0, ".")\n'
+        'from shared.lib import get_version\n\n'
+        'def run():\n    print(f"web {get_version()}")\n\n'
+        'if __name__ == "__main__":\n    run()\n'
+    )
+
+    _git_init(workdir)
+
+    if with_takumi:
+        _takumi_init(workdir)
+        os.remove(f"{workdir}/takumi-pkg.yaml")
+        Path(f"{workdir}/takumi.yaml").write_text(
+            "workspace:\n  name: myapp\n  ignore:\n    - __pycache__/\n"
+        )
+        for pkg, deps in [("shared", []), ("api", ["shared"]), ("web", ["shared"])]:
+            dep_yaml = ""
+            if deps:
+                dep_yaml = "dependencies:\n" + "".join(f"  - {d}\n" for d in deps)
+            Path(f"{workdir}/{pkg}/takumi-pkg.yaml").write_text(
+                f"package:\n  name: {pkg}\n  version: 0.1.0\n{dep_yaml}"
+                f"phases:\n  build:\n    commands:\n      - python {pkg}/main.py\n"
+                f"  test:\n    commands:\n      - python {pkg}/main.py\n"
+            ) if deps else Path(f"{workdir}/{pkg}/takumi-pkg.yaml").write_text(
+                f"package:\n  name: {pkg}\n  version: 0.1.0\n"
+                f"phases:\n  build:\n    commands:\n      - python -m py_compile {pkg}/lib.py\n"
+                f"  test:\n    commands:\n"
+                f'      - python -c "from {pkg}.lib import get_version; assert get_version()"\n'
+            )
+        _git_commit(workdir, "add takumi")
+
+    # Make a change to shared after baseline
+    Path(f"{workdir}/shared/lib.py").write_text(
+        'VERSION = "2.0"\n\ndef get_version():\n    return VERSION\n'
+    )
+
+    task = (
+        "I just changed the shared library in this Python project. Figure out "
+        "which packages are affected by this change and build/test only those — "
+        "don't rebuild anything that hasn't changed. Call task_complete when done."
+    )
+
+    def verify(wd, metrics):
+        checks = {}
+        score = 0.0
+
+        # 1. All packages still work (0.3)
+        all_ok = True
+        for pkg in ("api", "web"):
+            r = subprocess.run(
+                f"python {pkg}/main.py", shell=True, cwd=wd,
+                capture_output=True, text=True,
+            )
+            if r.returncode != 0:
+                all_ok = False
+        checks["all_run"] = all_ok
+        if all_ok:
+            score += 0.3
+
+        # 2. Agent identified affected packages (0.3)
+        transcript_text = " ".join(
+            e.get("output", "") + " " + e.get("text", "") + " " +
             e.get("input", {}).get("summary", "") + " " +
             e.get("input", {}).get("command", "")
             for e in metrics.transcript
         ).lower()
+        dep_words = ("affected", "depend", "import", "←", "<-", "downstream", "consumer")
+        found_api = "api" in transcript_text and any(w in transcript_text for w in dep_words)
+        found_web = "web" in transcript_text and any(w in transcript_text for w in dep_words)
+        checks["identified_affected"] = found_api and found_web
+        if checks["identified_affected"]:
+            score += 0.3
 
-        # 1. Identifies core as the base / no-dependency package (0.2)
-        checks["core_is_base"] = (
-            "core" in text and
-            any(w in text for w in (
-                "no depend", "no dep", "no deps", "base", "root",
-                "foundation", "leaf", "level 0", "independent",
-            ))
+        # 3. Agent scoped its work (0.4)
+        run_commands = []
+        for e in metrics.transcript:
+            if e.get("tool") == "run_command":
+                run_commands.append(e.get("input", {}).get("command", ""))
+        used_affected = any("affected" in cmd for cmd in run_commands)
+        used_targeted = any(
+            pkg in cmd for cmd in run_commands
+            for pkg in ("shared", "api", "web")
+            if ("python" in cmd or "takumi" in cmd or "build" in cmd or "test" in cmd)
         )
-        if checks["core_is_base"]:
-            score += 0.2
+        checks["scoped_build"] = used_affected or used_targeted
+        if checks["scoped_build"]:
+            score += 0.4
 
-        # 2. Identifies auth → core dependency (0.2)
-        # Match natural language, arrows, and takumi graph output (← means "depends on")
-        dep_patterns_auth = (
-            "auth depends on core", "auth -> core", "auth → core",
-            "auth: core", "auth relies on core", "auth imports core",
-            # takumi graph output: "auth ← core" means auth depends on core
-            "auth ← core", "auth <- core",
-            # yaml-style
-            "auth\n", "dependencies:\n  - core",
-        )
-        checks["auth_depends_core"] = (
-            "auth" in text and "core" in text and
-            any(p in text for p in dep_patterns_auth)
-        )
-        if not checks["auth_depends_core"]:
-            checks["auth_depends_core"] = (
-                "auth" in text and "core" in text and
-                any(w in text for w in ("depend", "←", "<-", "level"))
-            )
-        if checks["auth_depends_core"]:
-            score += 0.2
-
-        # 3. Identifies api → core dependency (0.2)
-        dep_patterns_api = (
-            "api depends on core", "api -> core", "api → core",
-            "api: core", "api relies on core", "api imports core",
-            "api ← core", "api <- core",
-        )
-        checks["api_depends_core"] = (
-            "api" in text and "core" in text and
-            any(p in text for p in dep_patterns_api)
-        )
-        if not checks["api_depends_core"]:
-            checks["api_depends_core"] = (
-                "api" in text and "core" in text and
-                any(w in text for w in ("depend", "←", "<-", "level"))
-            )
-        if checks["api_depends_core"]:
-            score += 0.2
-
-        # 4. Identifies gateway → auth + api (diamond) (0.2)
-        checks["gateway_depends_both"] = (
-            "gateway" in text and "auth" in text and "api" in text and
-            any(w in text for w in (
-                "depend", "gateway ->", "gateway →", "diamond",
-                "gateway ←", "gateway <-", "level 2",
-            ))
-        )
-        if checks["gateway_depends_both"]:
-            score += 0.2
-
-        # 5. Correct build order — core first, gateway last (0.2)
-        checks["correct_build_order"] = False
-        core_pos = text.find("core")
-        gateway_pos = text.rfind("gateway")
-        if core_pos >= 0 and gateway_pos >= 0 and core_pos < gateway_pos:
-            if any(w in text for w in (
-                "order", "first", "last", "level", "before", "then",
-                "level 0", "level 1", "level 2",
-            )):
-                checks["correct_build_order"] = True
-        if checks["correct_build_order"]:
-            score += 0.2
-
-        n_correct = sum(1 for v in checks.values() if v)
-        passed = n_correct >= 3  # At least 3 of 5 facts correct
+        passed = all_ok and checks["identified_affected"]
         return {"passed": passed, "score": score, "checks": checks}
 
     return {"task": task, "verify": verify}
+
+
+def setup_understand_structure_python(workdir, with_takumi):
+    """
+    Scenario: 4-package Python project with a diamond dependency.
+    Agent must explain the dependency structure and build order.
+    """
+    for pkg in ("core", "auth", "api", "gateway"):
+        os.makedirs(f"{workdir}/{pkg}")
+        Path(f"{workdir}/{pkg}/__init__.py").write_text("")
+        Path(f"{workdir}/{pkg}/main.py").write_text(
+            f'def run():\n    print("{pkg}")\n\nif __name__ == "__main__":\n    run()\n'
+        )
+
+    # Add imports to show dependency structure
+    Path(f"{workdir}/auth/main.py").write_text(
+        'import sys\nsys.path.insert(0, ".")\nfrom core.main import run as core_run\n\n'
+        'def run():\n    core_run()\n    print("auth")\n\nif __name__ == "__main__":\n    run()\n'
+    )
+    Path(f"{workdir}/api/main.py").write_text(
+        'import sys\nsys.path.insert(0, ".")\nfrom core.main import run as core_run\n\n'
+        'def run():\n    core_run()\n    print("api")\n\nif __name__ == "__main__":\n    run()\n'
+    )
+    Path(f"{workdir}/gateway/main.py").write_text(
+        'import sys\nsys.path.insert(0, ".")\n'
+        'from auth.main import run as auth_run\nfrom api.main import run as api_run\n\n'
+        'def run():\n    auth_run()\n    api_run()\n    print("gateway")\n\n'
+        'if __name__ == "__main__":\n    run()\n'
+    )
+
+    _git_init(workdir)
+
+    if with_takumi:
+        _takumi_init(workdir)
+        os.remove(f"{workdir}/takumi-pkg.yaml")
+        Path(f"{workdir}/takumi.yaml").write_text(
+            "workspace:\n  name: platform\n"
+        )
+        configs = {
+            "core": [],
+            "auth": ["core"],
+            "api": ["core"],
+            "gateway": ["auth", "api"],
+        }
+        for pkg, deps in configs.items():
+            dep_yaml = ""
+            if deps:
+                dep_yaml = "dependencies:\n" + "".join(f"  - {d}\n" for d in deps)
+            Path(f"{workdir}/{pkg}/takumi-pkg.yaml").write_text(
+                f"package:\n  name: {pkg}\n  version: 0.1.0\n{dep_yaml}"
+                f"phases:\n  build:\n    commands:\n      - python {pkg}/main.py\n"
+            )
+        _git_commit(workdir, "add takumi")
+
+    task = (
+        "I'm new to this Python project. Explain the dependency structure: "
+        "which packages depend on which, and what order should they be "
+        "built in? Call task_complete when done."
+    )
+
+    # Reuse the same verify logic as Go — it's text analysis
+    def verify(_wd, metrics):
+        return _verify_understand_structure(metrics)
+
+    return {"task": task, "verify": verify}
+
+
+# ---------------------------------------------------------------------------
+# TypeScript scenario setup functions
+# ---------------------------------------------------------------------------
+
+def setup_fix_build_error_ts(workdir, with_takumi):
+    """
+    Scenario: TypeScript project with a type error in the api package.
+    Agent must find and fix the bug, then verify tsc passes.
+    """
+    os.makedirs(f"{workdir}/shared")
+    Path(f"{workdir}/shared/index.ts").write_text(
+        'export function greet(name: string): string {\n  return "Hello, " + name;\n}\n'
+    )
+    Path(f"{workdir}/shared/tsconfig.json").write_text(
+        '{"compilerOptions":{"strict":true,"outDir":"dist","declaration":true},'
+        '"include":["*.ts"]}\n'
+    )
+    Path(f"{workdir}/shared/package.json").write_text(
+        '{"name":"shared","version":"0.1.0","main":"dist/index.js"}\n'
+    )
+
+    os.makedirs(f"{workdir}/api")
+    # Bug: assigning string to number type
+    Path(f"{workdir}/api/index.ts").write_text("""\
+import { greet } from "../shared";
+
+const port: number = "8080";
+
+console.log(`Server on port ${port}`);
+console.log(greet("World"));
+""")
+    Path(f"{workdir}/api/tsconfig.json").write_text(
+        '{"compilerOptions":{"strict":true,"outDir":"dist"},'
+        '"include":["*.ts"],'
+        '"references":[{"path":"../shared"}]}\n'
+    )
+    Path(f"{workdir}/api/package.json").write_text(
+        '{"name":"api","version":"0.1.0","dependencies":{"shared":"*"}}\n'
+    )
+
+    # Root tsconfig for project references
+    Path(f"{workdir}/tsconfig.json").write_text(
+        '{"files":[],"references":[{"path":"shared"},{"path":"api"}]}\n'
+    )
+    Path(f"{workdir}/package.json").write_text(
+        '{"private":true,"devDependencies":{"typescript":"^5.0.0"}}\n'
+    )
+
+    # Install typescript locally so tsc is available
+    subprocess.run(
+        "npm install --silent 2>/dev/null",
+        shell=True, cwd=workdir, capture_output=True,
+    )
+
+    _git_init(workdir)
+
+    if with_takumi:
+        _takumi_init(workdir)
+        os.remove(f"{workdir}/takumi-pkg.yaml")
+        Path(f"{workdir}/takumi.yaml").write_text(
+            "workspace:\n  name: myapp\n  ignore:\n    - node_modules/\n    - dist/\n"
+        )
+        Path(f"{workdir}/shared/takumi-pkg.yaml").write_text("""\
+package:
+  name: shared
+  version: 0.1.0
+phases:
+  build:
+    commands:
+      - npx tsc -p shared/tsconfig.json
+""")
+        Path(f"{workdir}/api/takumi-pkg.yaml").write_text("""\
+package:
+  name: api
+  version: 0.1.0
+dependencies:
+  - shared
+phases:
+  build:
+    commands:
+      - npx tsc -p api/tsconfig.json
+""")
+        _git_commit(workdir, "add takumi")
+
+    task = (
+        "The build is broken in this TypeScript project. Running the TypeScript "
+        "compiler gives a type error. Find the bug, fix it, and verify the build "
+        "passes. Call task_complete when done."
+    )
+
+    def verify(wd, metrics):
+        checks = {}
+        score = 0.0
+
+        # 1. tsc passes (0.4)
+        r = subprocess.run(
+            "npx tsc -p api/tsconfig.json --noEmit",
+            shell=True, cwd=wd, capture_output=True, text=True,
+        )
+        checks["build_passes"] = r.returncode == 0
+        if checks["build_passes"]:
+            score += 0.4
+
+        # 2. Fix is in the right file (0.2)
+        try:
+            source = Path(f"{wd}/api/index.ts").read_text()
+            checks["correct_file"] = 'const port: number = "8080"' not in source
+        except Exception:
+            checks["correct_file"] = False
+        if checks["correct_file"]:
+            score += 0.2
+
+        # 3. Fix is correct — port should be a number or type should match (0.2)
+        checks["correct_fix"] = False
+        if checks["correct_file"]:
+            if any(p in source for p in (
+                "port: number = 8080", "port = 8080",
+                'port: string = "8080"', "parseInt(",
+                "Number(",
+            )):
+                checks["correct_fix"] = True
+                score += 0.2
+
+        # 4. shared still compiles (0.2)
+        r2 = subprocess.run(
+            "npx tsc -p shared/tsconfig.json --noEmit",
+            shell=True, cwd=wd, capture_output=True, text=True,
+        )
+        checks["no_collateral"] = r2.returncode == 0
+        if checks["no_collateral"]:
+            score += 0.2
+
+        return {"passed": checks["build_passes"] and checks.get("correct_fix", False), "score": score, "checks": checks}
+
+    return {"task": task, "verify": verify}
+
+
+def setup_scoped_rebuild_ts(workdir, with_takumi):
+    """
+    Scenario: 3-package TypeScript monorepo. shared was just modified.
+    Agent must figure out what's affected and build only those.
+    """
+    for pkg in ("shared", "api", "web"):
+        os.makedirs(f"{workdir}/{pkg}")
+        Path(f"{workdir}/{pkg}/package.json").write_text(
+            f'{{"name":"{pkg}","version":"0.1.0"}}\n'
+        )
+
+    Path(f"{workdir}/shared/index.ts").write_text(
+        'export const VERSION = "1.0";\n'
+    )
+    Path(f"{workdir}/shared/tsconfig.json").write_text(
+        '{"compilerOptions":{"strict":true,"outDir":"dist","declaration":true},'
+        '"include":["*.ts"]}\n'
+    )
+
+    Path(f"{workdir}/api/index.ts").write_text(
+        'import { VERSION } from "../shared";\nconsole.log(`api ${VERSION}`);\n'
+    )
+    Path(f"{workdir}/api/tsconfig.json").write_text(
+        '{"compilerOptions":{"strict":true,"outDir":"dist"},'
+        '"include":["*.ts"],"references":[{"path":"../shared"}]}\n'
+    )
+
+    Path(f"{workdir}/web/index.ts").write_text(
+        'import { VERSION } from "../shared";\nconsole.log(`web ${VERSION}`);\n'
+    )
+    Path(f"{workdir}/web/tsconfig.json").write_text(
+        '{"compilerOptions":{"strict":true,"outDir":"dist"},'
+        '"include":["*.ts"],"references":[{"path":"../shared"}]}\n'
+    )
+
+    Path(f"{workdir}/tsconfig.json").write_text(
+        '{"files":[],"references":[{"path":"shared"},{"path":"api"},{"path":"web"}]}\n'
+    )
+    Path(f"{workdir}/package.json").write_text(
+        '{"private":true,"devDependencies":{"typescript":"^5.0.0"}}\n'
+    )
+
+    subprocess.run(
+        "npm install --silent 2>/dev/null",
+        shell=True, cwd=workdir, capture_output=True,
+    )
+
+    _git_init(workdir)
+
+    if with_takumi:
+        _takumi_init(workdir)
+        os.remove(f"{workdir}/takumi-pkg.yaml")
+        Path(f"{workdir}/takumi.yaml").write_text(
+            "workspace:\n  name: myapp\n  ignore:\n    - node_modules/\n    - dist/\n"
+        )
+        for pkg, deps in [("shared", []), ("api", ["shared"]), ("web", ["shared"])]:
+            dep_yaml = ""
+            if deps:
+                dep_yaml = "dependencies:\n" + "".join(f"  - {d}\n" for d in deps)
+            Path(f"{workdir}/{pkg}/takumi-pkg.yaml").write_text(
+                f"package:\n  name: {pkg}\n  version: 0.1.0\n{dep_yaml}"
+                f"phases:\n  build:\n    commands:\n      - npx tsc -p {pkg}/tsconfig.json\n"
+            )
+        _git_commit(workdir, "add takumi")
+
+    # Make a change to shared after baseline
+    Path(f"{workdir}/shared/index.ts").write_text(
+        'export const VERSION = "2.0";\n'
+    )
+
+    task = (
+        "I just changed the shared library in this TypeScript monorepo. Figure "
+        "out which packages are affected by this change and build only those — "
+        "don't rebuild anything that hasn't changed. Call task_complete when done."
+    )
+
+    def verify(wd, metrics):
+        checks = {}
+        score = 0.0
+
+        # 1. All packages compile (0.3)
+        all_ok = True
+        for pkg in ("shared", "api", "web"):
+            r = subprocess.run(
+                f"npx tsc -p {pkg}/tsconfig.json --noEmit",
+                shell=True, cwd=wd, capture_output=True, text=True,
+            )
+            if r.returncode != 0:
+                all_ok = False
+        checks["all_compile"] = all_ok
+        if all_ok:
+            score += 0.3
+
+        # 2. Agent identified affected packages (0.3)
+        transcript_text = " ".join(
+            e.get("output", "") + " " + e.get("text", "") + " " +
+            e.get("input", {}).get("summary", "") + " " +
+            e.get("input", {}).get("command", "")
+            for e in metrics.transcript
+        ).lower()
+        dep_words = ("affected", "depend", "import", "reference", "←", "<-", "downstream")
+        found_api = "api" in transcript_text and any(w in transcript_text for w in dep_words)
+        found_web = "web" in transcript_text and any(w in transcript_text for w in dep_words)
+        checks["identified_affected"] = found_api and found_web
+        if checks["identified_affected"]:
+            score += 0.3
+
+        # 3. Agent scoped its work (0.4)
+        run_commands = [
+            e.get("input", {}).get("command", "")
+            for e in metrics.transcript if e.get("tool") == "run_command"
+        ]
+        used_affected = any("affected" in cmd for cmd in run_commands)
+        used_targeted = any(
+            pkg in cmd for cmd in run_commands
+            for pkg in ("shared", "api", "web")
+            if ("tsc" in cmd or "takumi" in cmd or "build" in cmd)
+        )
+        checks["scoped_build"] = used_affected or used_targeted
+        if checks["scoped_build"]:
+            score += 0.4
+
+        passed = all_ok and checks["identified_affected"]
+        return {"passed": passed, "score": score, "checks": checks}
+
+    return {"task": task, "verify": verify}
+
+
+def setup_understand_structure_ts(workdir, with_takumi):
+    """
+    Scenario: 4-package TypeScript monorepo with a diamond dependency.
+    Agent must explain the dependency structure and build order.
+    """
+    for pkg in ("core", "auth", "api", "gateway"):
+        os.makedirs(f"{workdir}/{pkg}")
+        Path(f"{workdir}/{pkg}/index.ts").write_text(
+            f'export const name = "{pkg}";\nconsole.log(name);\n'
+        )
+        Path(f"{workdir}/{pkg}/package.json").write_text(
+            f'{{"name":"{pkg}","version":"0.1.0"}}\n'
+        )
+
+    # Add imports showing dependency structure
+    Path(f"{workdir}/auth/index.ts").write_text(
+        'import { name as coreName } from "../core";\n'
+        'export const name = "auth";\nconsole.log(coreName, name);\n'
+    )
+    Path(f"{workdir}/api/index.ts").write_text(
+        'import { name as coreName } from "../core";\n'
+        'export const name = "api";\nconsole.log(coreName, name);\n'
+    )
+    Path(f"{workdir}/gateway/index.ts").write_text(
+        'import { name as authName } from "../auth";\n'
+        'import { name as apiName } from "../api";\n'
+        'export const name = "gateway";\nconsole.log(authName, apiName, name);\n'
+    )
+
+    # tsconfig references mirror the dependency graph
+    Path(f"{workdir}/core/tsconfig.json").write_text(
+        '{"compilerOptions":{"strict":true,"outDir":"dist","declaration":true},"include":["*.ts"]}\n'
+    )
+    Path(f"{workdir}/auth/tsconfig.json").write_text(
+        '{"compilerOptions":{"strict":true,"outDir":"dist","declaration":true},'
+        '"include":["*.ts"],"references":[{"path":"../core"}]}\n'
+    )
+    Path(f"{workdir}/api/tsconfig.json").write_text(
+        '{"compilerOptions":{"strict":true,"outDir":"dist","declaration":true},'
+        '"include":["*.ts"],"references":[{"path":"../core"}]}\n'
+    )
+    Path(f"{workdir}/gateway/tsconfig.json").write_text(
+        '{"compilerOptions":{"strict":true,"outDir":"dist"},'
+        '"include":["*.ts"],"references":[{"path":"../auth"},{"path":"../api"}]}\n'
+    )
+    Path(f"{workdir}/tsconfig.json").write_text(
+        '{"files":[],"references":[{"path":"core"},{"path":"auth"},{"path":"api"},{"path":"gateway"}]}\n'
+    )
+    Path(f"{workdir}/package.json").write_text(
+        '{"private":true,"devDependencies":{"typescript":"^5.0.0"}}\n'
+    )
+
+    subprocess.run(
+        "npm install --silent 2>/dev/null",
+        shell=True, cwd=workdir, capture_output=True,
+    )
+
+    _git_init(workdir)
+
+    if with_takumi:
+        _takumi_init(workdir)
+        os.remove(f"{workdir}/takumi-pkg.yaml")
+        Path(f"{workdir}/takumi.yaml").write_text(
+            "workspace:\n  name: platform\n  ignore:\n    - node_modules/\n"
+        )
+        configs = {
+            "core": [],
+            "auth": ["core"],
+            "api": ["core"],
+            "gateway": ["auth", "api"],
+        }
+        for pkg, deps in configs.items():
+            dep_yaml = ""
+            if deps:
+                dep_yaml = "dependencies:\n" + "".join(f"  - {d}\n" for d in deps)
+            Path(f"{workdir}/{pkg}/takumi-pkg.yaml").write_text(
+                f"package:\n  name: {pkg}\n  version: 0.1.0\n{dep_yaml}"
+                f"phases:\n  build:\n    commands:\n      - npx tsc -p {pkg}/tsconfig.json\n"
+            )
+        _git_commit(workdir, "add takumi")
+
+    task = (
+        "I'm new to this TypeScript project. Explain the dependency structure: "
+        "which packages depend on which, and what order should they be "
+        "built in? Call task_complete when done."
+    )
+
+    def verify(_wd, metrics):
+        return _verify_understand_structure(metrics)
+
+    return {"task": task, "verify": verify}
+
+
+# ---------------------------------------------------------------------------
+# Shared verify helpers
+# ---------------------------------------------------------------------------
+
+def _verify_understand_structure(metrics):
+    """Common correctness check for understand-structure across languages."""
+    checks = {}
+    score = 0.0
+
+    text = " ".join(
+        e.get("text", "") + " " +
+        e.get("output", "") + " " +
+        e.get("input", {}).get("summary", "") + " " +
+        e.get("input", {}).get("command", "")
+        for e in metrics.transcript
+    ).lower()
+
+    checks["core_is_base"] = (
+        "core" in text and
+        any(w in text for w in (
+            "no depend", "no dep", "no deps", "base", "root",
+            "foundation", "leaf", "level 0", "independent",
+        ))
+    )
+    if checks["core_is_base"]:
+        score += 0.2
+
+    dep_patterns_auth = (
+        "auth depends on core", "auth -> core", "auth → core",
+        "auth: core", "auth relies on core", "auth imports core",
+        "auth ← core", "auth <- core",
+    )
+    checks["auth_depends_core"] = (
+        "auth" in text and "core" in text and
+        any(p in text for p in dep_patterns_auth)
+    )
+    if not checks["auth_depends_core"]:
+        checks["auth_depends_core"] = (
+            "auth" in text and "core" in text and
+            any(w in text for w in ("depend", "←", "<-", "level", "import"))
+        )
+    if checks["auth_depends_core"]:
+        score += 0.2
+
+    dep_patterns_api = (
+        "api depends on core", "api -> core", "api → core",
+        "api: core", "api relies on core", "api imports core",
+        "api ← core", "api <- core",
+    )
+    checks["api_depends_core"] = (
+        "api" in text and "core" in text and
+        any(p in text for p in dep_patterns_api)
+    )
+    if not checks["api_depends_core"]:
+        checks["api_depends_core"] = (
+            "api" in text and "core" in text and
+            any(w in text for w in ("depend", "←", "<-", "level", "import"))
+        )
+    if checks["api_depends_core"]:
+        score += 0.2
+
+    checks["gateway_depends_both"] = (
+        "gateway" in text and "auth" in text and "api" in text and
+        any(w in text for w in (
+            "depend", "gateway ->", "gateway →", "diamond",
+            "gateway ←", "gateway <-", "level 2", "import",
+        ))
+    )
+    if checks["gateway_depends_both"]:
+        score += 0.2
+
+    checks["correct_build_order"] = False
+    core_pos = text.find("core")
+    gateway_pos = text.rfind("gateway")
+    if core_pos >= 0 and gateway_pos >= 0 and core_pos < gateway_pos:
+        if any(w in text for w in (
+            "order", "first", "last", "level", "before", "then",
+            "level 0", "level 1", "level 2",
+        )):
+            checks["correct_build_order"] = True
+    if checks["correct_build_order"]:
+        score += 0.2
+
+    n_correct = sum(1 for v in checks.values() if v)
+    passed = n_correct >= 3
+    return {"passed": passed, "score": score, "checks": checks}
 
 
 # ---------------------------------------------------------------------------
@@ -621,20 +1277,71 @@ def setup_understand_structure(workdir, with_takumi):
 # ---------------------------------------------------------------------------
 
 SCENARIOS = {
-    "fix-build-error": {
-        "name": "Fix Build Error",
+    # Go
+    "fix-build-error-go": {
+        "name": "Fix Build Error (Go)",
         "desc": "Find and fix a type error in a Go HTTP handler",
-        "setup": setup_fix_build_error,
+        "setup": setup_fix_build_error_go,
+        "group": "fix-build-error",
+        "lang": "Go",
     },
-    "scoped-rebuild": {
-        "name": "Scoped Rebuild",
-        "desc": "After changing shared lib, build only affected packages",
-        "setup": setup_scoped_rebuild,
+    "scoped-rebuild-go": {
+        "name": "Scoped Rebuild (Go)",
+        "desc": "After changing shared lib, build only affected Go packages",
+        "setup": setup_scoped_rebuild_go,
+        "group": "scoped-rebuild",
+        "lang": "Go",
     },
-    "understand-structure": {
-        "name": "Understand Structure",
-        "desc": "Explain dependency graph and build order of a 4-package monorepo",
-        "setup": setup_understand_structure,
+    "understand-structure-go": {
+        "name": "Understand Structure (Go)",
+        "desc": "Explain dependency graph and build order of a Go monorepo",
+        "setup": setup_understand_structure_go,
+        "group": "understand-structure",
+        "lang": "Go",
+    },
+    # Python
+    "fix-build-error-python": {
+        "name": "Fix Build Error (Python)",
+        "desc": "Find and fix a TypeError in a Python project",
+        "setup": setup_fix_build_error_python,
+        "group": "fix-build-error",
+        "lang": "Python",
+    },
+    "scoped-rebuild-python": {
+        "name": "Scoped Rebuild (Python)",
+        "desc": "After changing shared lib, rebuild only affected Python packages",
+        "setup": setup_scoped_rebuild_python,
+        "group": "scoped-rebuild",
+        "lang": "Python",
+    },
+    "understand-structure-python": {
+        "name": "Understand Structure (Python)",
+        "desc": "Explain dependency graph and build order of a Python project",
+        "setup": setup_understand_structure_python,
+        "group": "understand-structure",
+        "lang": "Python",
+    },
+    # TypeScript
+    "fix-build-error-ts": {
+        "name": "Fix Build Error (TypeScript)",
+        "desc": "Find and fix a type error caught by tsc",
+        "setup": setup_fix_build_error_ts,
+        "group": "fix-build-error",
+        "lang": "TypeScript",
+    },
+    "scoped-rebuild-ts": {
+        "name": "Scoped Rebuild (TypeScript)",
+        "desc": "After changing shared lib, build only affected TS packages",
+        "setup": setup_scoped_rebuild_ts,
+        "group": "scoped-rebuild",
+        "lang": "TypeScript",
+    },
+    "understand-structure-ts": {
+        "name": "Understand Structure (TypeScript)",
+        "desc": "Explain dependency graph and build order of a TS monorepo",
+        "setup": setup_understand_structure_ts,
+        "group": "understand-structure",
+        "lang": "TypeScript",
     },
 }
 

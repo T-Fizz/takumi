@@ -16,18 +16,21 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 SCENARIOS = {
-    "fix-build-error": {
-        "title": "Fix Build Error",
-        "desc": "Find and fix a type error in a Go HTTP handler",
-    },
-    "scoped-rebuild": {
-        "title": "Scoped Rebuild",
-        "desc": "After changing shared lib, build only affected packages",
-    },
-    "understand-structure": {
-        "title": "Understand Structure",
-        "desc": "Explain dependency graph and build order of a 4-package monorepo",
-    },
+    "fix-build-error-go": {"title": "Fix Build Error (Go)", "desc": "Find and fix a type error in a Go HTTP handler", "group": "fix-build-error", "lang": "Go"},
+    "fix-build-error-python": {"title": "Fix Build Error (Python)", "desc": "Find and fix a TypeError in a Python project", "group": "fix-build-error", "lang": "Python"},
+    "fix-build-error-ts": {"title": "Fix Build Error (TypeScript)", "desc": "Find and fix a type error caught by tsc", "group": "fix-build-error", "lang": "TypeScript"},
+    "scoped-rebuild-go": {"title": "Scoped Rebuild (Go)", "desc": "After changing shared lib, build only affected Go packages", "group": "scoped-rebuild", "lang": "Go"},
+    "scoped-rebuild-python": {"title": "Scoped Rebuild (Python)", "desc": "After changing shared lib, rebuild only affected Python packages", "group": "scoped-rebuild", "lang": "Python"},
+    "scoped-rebuild-ts": {"title": "Scoped Rebuild (TypeScript)", "desc": "After changing shared lib, build only affected TS packages", "group": "scoped-rebuild", "lang": "TypeScript"},
+    "understand-structure-go": {"title": "Understand Structure (Go)", "desc": "Explain dependency graph and build order of a Go monorepo", "group": "understand-structure", "lang": "Go"},
+    "understand-structure-python": {"title": "Understand Structure (Python)", "desc": "Explain dependency graph and build order of a Python project", "group": "understand-structure", "lang": "Python"},
+    "understand-structure-ts": {"title": "Understand Structure (TypeScript)", "desc": "Explain dependency graph and build order of a TS monorepo", "group": "understand-structure", "lang": "TypeScript"},
+}
+
+SCENARIO_GROUPS = {
+    "fix-build-error": {"title": "Fix Build Error", "desc": "Find and fix a type error"},
+    "scoped-rebuild": {"title": "Scoped Rebuild", "desc": "After changing shared lib, build only affected packages"},
+    "understand-structure": {"title": "Understand Structure", "desc": "Explain dependency graph and build order of a monorepo"},
 }
 
 MODEL_NAMES = {
@@ -178,92 +181,96 @@ def generate_section_multi(version, combined):
 
     lines.extend(["", "### Scenarios\n"])
 
-    # Per-scenario comparison across models
-    for sid, meta in SCENARIOS.items():
-        # Find which models have data for this scenario
-        avail = []
-        for model in models:
-            data = models_data[model]
-            if sid not in data.get("scenarios", {}):
-                continue
-            scenario = data["scenarios"][sid]
-            wo = scenario.get("without_takumi", {})
-            wi = scenario.get("with_takumi", {})
-            if wo.get("error") and "input_tokens" not in wo:
-                continue
-            if wi.get("error") and "input_tokens" not in wi:
-                continue
-            avail.append(model)
+    # Group scenarios by type, show one table per group with language rows
+    for group_id, group_meta in SCENARIO_GROUPS.items():
+        # Collect scenario IDs in this group
+        group_sids = [sid for sid, meta in SCENARIOS.items() if meta.get("group") == group_id]
+        if not group_sids:
+            continue
 
-        if not avail:
+        # Check if any model has data for any scenario in this group
+        has_data = False
+        for sid in group_sids:
+            for model in models:
+                data = models_data[model]
+                if sid in data.get("scenarios", {}):
+                    has_data = True
+                    break
+
+        if not has_data:
             continue
 
         lines.extend([
-            f"#### {meta['title']}\n",
-            f"> {meta['desc']}\n",
+            f"#### {group_meta['title']}\n",
+            f"> {group_meta['desc']}\n",
         ])
 
-        # Build table with model columns
-        header = "| Metric |"
-        sep = "|--------|"
-        for model in avail:
+        # One summary table: Language × Model showing tokens saved + correctness
+        header = "| Language |"
+        sep = "|----------|"
+        for model in models:
             name = short_name(model)
-            header += f" {name} ||"
-            sep += "------|------|"
+            header += f" {name} |||"
+            sep += "------|------|------|"
 
         lines.append(header)
         lines.append(sep)
 
-        # Subheader row
+        # Subheader
         subheader = "| |"
-        for _ in avail:
-            subheader += " Without | With |"
+        for _ in models:
+            subheader += " Without | With | Saved |"
         lines.append(subheader)
 
-        # Data rows
-        for metric, key_w, key_t, is_time in [
-            ("Tokens", lambda wo, wi: wo.get("input_tokens", 0) + wo.get("output_tokens", 0),
-                        lambda wo, wi: wi.get("input_tokens", 0) + wi.get("output_tokens", 0), False),
-            ("Turns", lambda wo, wi: wo.get("turns", 0), lambda wo, wi: wi.get("turns", 0), False),
-            ("Tool calls", lambda wo, wi: wo.get("tool_calls", 0), lambda wo, wi: wi.get("tool_calls", 0), False),
-            ("Time", lambda wo, wi: wo.get("wall_time_s", 0), lambda wo, wi: wi.get("wall_time_s", 0), True),
-        ]:
-            row = f"| {metric} |"
-            for model in avail:
+        for sid in group_sids:
+            meta = SCENARIOS[sid]
+            lang = meta.get("lang", "?")
+            row = f"| **{lang}** |"
+
+            for model in models:
                 data = models_data[model]
-                wo = data["scenarios"][sid].get("without_takumi", {})
-                wi = data["scenarios"][sid].get("with_takumi", {})
-                wv = key_w(wo, wi)
-                tv = key_t(wo, wi)
-                if is_time:
-                    row += f" {wv:.1f}s | {tv:.1f}s |"
-                elif isinstance(wv, int):
-                    row += f" {fmt(wv)} | {fmt(tv)} |"
-                else:
-                    row += f" {wv} | {tv} |"
+                scenario = data.get("scenarios", {}).get(sid, {})
+                wo = scenario.get("without_takumi", {})
+                wi = scenario.get("with_takumi", {})
+
+                if not wo or (wo.get("error") and "input_tokens" not in wo):
+                    row += " — | — | — |"
+                    continue
+
+                w_tok = wo.get("input_tokens", 0) + wo.get("output_tokens", 0)
+                t_tok = wi.get("input_tokens", 0) + wi.get("output_tokens", 0)
+                row += f" {fmt(w_tok)} | {fmt(t_tok)} | **{pct(w_tok, t_tok)}** |"
+
             lines.append(row)
 
-        # Correctness row
-        corr_row = "| Correctness |"
-        for model in avail:
-            data = models_data[model]
-            wo = data["scenarios"][sid].get("without_takumi", {})
-            wi = data["scenarios"][sid].get("with_takumi", {})
-            w_corr = wo.get("correctness", 0.0) * 100
-            t_corr = wi.get("correctness", 0.0) * 100
-            corr_row += f" {w_corr:.0f}% | {t_corr:.0f}% |"
-        lines.append(corr_row)
+        # Correctness sub-table
+        lines.append("")
+        lines.append(f"**Correctness** (without / with):\n")
 
-        # Saved row
-        saved_row = "| **Saved** |"
-        for model in avail:
-            data = models_data[model]
-            wo = data["scenarios"][sid].get("without_takumi", {})
-            wi = data["scenarios"][sid].get("with_takumi", {})
-            w_tok = wo.get("input_tokens", 0) + wo.get("output_tokens", 0)
-            t_tok = wi.get("input_tokens", 0) + wi.get("output_tokens", 0)
-            saved_row += f" **{pct(w_tok, t_tok)}** ||"
-        lines.append(saved_row)
+        corr_header = "| Language |"
+        corr_sep = "|----------|"
+        for model in models:
+            corr_header += f" {short_name(model)} |"
+            corr_sep += "------|"
+        lines.append(corr_header)
+        lines.append(corr_sep)
+
+        for sid in group_sids:
+            meta = SCENARIOS[sid]
+            lang = meta.get("lang", "?")
+            row = f"| {lang} |"
+            for model in models:
+                data = models_data[model]
+                scenario = data.get("scenarios", {}).get(sid, {})
+                wo = scenario.get("without_takumi", {})
+                wi = scenario.get("with_takumi", {})
+                if not wo or (wo.get("error") and "input_tokens" not in wo):
+                    row += " — |"
+                    continue
+                w_corr = wo.get("correctness", 0.0) * 100
+                t_corr = wi.get("correctness", 0.0) * 100
+                row += f" {w_corr:.0f}% / {t_corr:.0f}% |"
+            lines.append(row)
 
         lines.append("")
 
