@@ -218,6 +218,8 @@ For change-scoped work:
 - **Build first, explore later.** Run takumi build before reading source files. Errors pinpoint the problem — you don't need to explore the whole project first.
 - **Trust takumi output.** takumi status, graph, and affected give you complete, accurate info about packages, dependencies, and what changed. If these commands answered your question, you're done — don't also read config files or source imports to double-check.
 - **Use takumi commands, not raw builds.** go build, npm run build, javac, cargo build — replace all of these with takumi build.
+- **Read error paths relative to the package.** Build errors are prefixed with `[pkg]` and show paths relative to that package directory. To read a failing file, prepend the package name: `[api] src/Main.java` means `api/src/Main.java`.
+- **A passing rebuild is sufficient.** After fixing a build error, run takumi build. If it passes, you're done — no need to re-read the file you just wrote or re-check status.
 
 ## Config files
 - `takumi.yaml` — workspace root (one per workspace)
