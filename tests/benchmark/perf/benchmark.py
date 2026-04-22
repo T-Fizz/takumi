@@ -68,6 +68,8 @@ class Metrics:
     wall_time_s: float = 0.0
     task_completed: bool = False
     success: bool = False
+    correctness: float = 0.0
+    correctness_checks: dict = field(default_factory=dict)
     transcript: list = field(default_factory=list)
 
     @property
@@ -313,12 +315,46 @@ phases:
         "and verify the build passes. Call task_complete when done."
     )
 
-    def verify(wd):
+    def verify(wd, metrics):
+        checks = {}
+        score = 0.0
+
+        # 1. Build passes (0.4)
         r = subprocess.run(
             "go build ./...", shell=True, cwd=f"{wd}/api",
             capture_output=True, text=True,
         )
-        return r.returncode == 0
+        checks["build_passes"] = r.returncode == 0
+        if checks["build_passes"]:
+            score += 0.4
+
+        # 2. Fix is in the right file (0.2)
+        try:
+            source = Path(f"{wd}/api/main.go").read_text()
+            checks["correct_file"] = 'WriteHeader("200")' not in source
+        except Exception:
+            checks["correct_file"] = False
+        if checks["correct_file"]:
+            score += 0.2
+
+        # 3. Fix is correct — WriteHeader takes an int (0.2)
+        checks["correct_fix"] = False
+        if checks["correct_file"]:
+            # Accept WriteHeader(200) or WriteHeader(http.StatusOK)
+            if "WriteHeader(200)" in source or "WriteHeader(http.StatusOK)" in source:
+                checks["correct_fix"] = True
+                score += 0.2
+
+        # 4. Shared package still compiles (0.2)
+        r2 = subprocess.run(
+            "go build ./...", shell=True, cwd=f"{wd}/shared",
+            capture_output=True, text=True,
+        )
+        checks["no_collateral"] = r2.returncode == 0
+        if checks["no_collateral"]:
+            score += 0.2
+
+        return {"passed": checks["build_passes"] and checks["correct_fix"], "score": score, "checks": checks}
 
     return {"task": task, "verify": verify}
 
@@ -375,16 +411,65 @@ def setup_scoped_rebuild(workdir, with_takumi):
         "that hasn't changed. Call task_complete when done."
     )
 
-    def verify(wd):
-        # All packages should still compile
+    def verify(wd, metrics):
+        checks = {}
+        score = 0.0
+
+        # 1. All packages still compile (0.3)
+        all_compile = True
         for pkg in ("shared", "api", "web"):
             r = subprocess.run(
                 "go build ./...", shell=True, cwd=f"{wd}/{pkg}",
                 capture_output=True, text=True,
             )
             if r.returncode != 0:
-                return False
-        return True
+                all_compile = False
+        checks["all_compile"] = all_compile
+        if all_compile:
+            score += 0.3
+
+        # 2. Agent identified affected packages (0.3)
+        # Look through transcript for evidence the agent recognized dependencies
+        transcript_text = " ".join(
+            e.get("output", "") + " " + e.get("text", "") + " " +
+            json.dumps(e.get("input", {}))
+            for e in metrics.transcript
+        ).lower()
+        # Agent should mention that api and web depend on shared
+        found_api_affected = ("api" in transcript_text and
+                              ("affected" in transcript_text or "depend" in transcript_text))
+        found_web_affected = ("web" in transcript_text and
+                              ("affected" in transcript_text or "depend" in transcript_text))
+        checks["identified_affected"] = found_api_affected and found_web_affected
+        if checks["identified_affected"]:
+            score += 0.3
+
+        # 3. Agent actually scoped (didn't just build everything blindly) (0.4)
+        # Check tool calls: did the agent use targeted builds or affected?
+        build_commands = []
+        for e in metrics.transcript:
+            if e.get("tool") == "run_command":
+                cmd = e.get("input", {}).get("command", "")
+                if "build" in cmd:
+                    build_commands.append(cmd)
+        # Signs of scoping: used takumi affected, takumi build --affected,
+        # or built specific packages rather than a blanket "go build" at root
+        used_affected = any("affected" in cmd for cmd in build_commands)
+        used_targeted = any(
+            pkg in cmd for cmd in build_commands
+            for pkg in ("shared", "api", "web", "./shared", "./api", "./web")
+        )
+        blanket_root_build = any(
+            cmd.strip() in ("go build ./...", "go build .")
+            and "cd" not in cmd and "shared" not in cmd and "api" not in cmd and "web" not in cmd
+            for cmd in build_commands
+        )
+        checks["scoped_build"] = used_affected or (used_targeted and not blanket_root_build)
+        if checks["scoped_build"]:
+            score += 0.4
+
+        passed = all_compile and checks["identified_affected"]
+        return {"passed": passed, "score": score, "checks": checks}
 
     return {"task": task, "verify": verify}
 
@@ -434,8 +519,76 @@ def setup_understand_structure(workdir, with_takumi):
         "built in? Call task_complete when done."
     )
 
-    def verify(_wd):
-        return True  # Success if the agent completes and explains
+    def verify(_wd, metrics):
+        checks = {}
+        score = 0.0
+
+        # Gather all assistant text and task_complete summaries
+        text = " ".join(
+            e.get("text", "") + " " + e.get("input", {}).get("summary", "")
+            for e in metrics.transcript
+        ).lower()
+
+        # 1. Identifies core as the base / no-dependency package (0.2)
+        checks["core_is_base"] = (
+            "core" in text and
+            any(w in text for w in ("no depend", "no dep", "base", "root", "foundation", "leaf"))
+        )
+        if checks["core_is_base"]:
+            score += 0.2
+
+        # 2. Identifies auth → core dependency (0.2)
+        checks["auth_depends_core"] = (
+            "auth" in text and "core" in text and
+            any(p in text for p in ("auth depends on core", "auth -> core",
+                                     "auth → core", "auth: core",
+                                     "auth relies on core", "auth imports core"))
+        )
+        # Fallback: just check both are mentioned near dependency language
+        if not checks["auth_depends_core"]:
+            checks["auth_depends_core"] = (
+                "auth" in text and "core" in text and "depend" in text
+            )
+        if checks["auth_depends_core"]:
+            score += 0.2
+
+        # 3. Identifies api → core dependency (0.2)
+        checks["api_depends_core"] = (
+            "api" in text and "core" in text and
+            any(p in text for p in ("api depends on core", "api -> core",
+                                     "api → core", "api: core",
+                                     "api relies on core", "api imports core"))
+        )
+        if not checks["api_depends_core"]:
+            checks["api_depends_core"] = (
+                "api" in text and "core" in text and "depend" in text
+            )
+        if checks["api_depends_core"]:
+            score += 0.2
+
+        # 4. Identifies gateway → auth + api (diamond) (0.2)
+        checks["gateway_depends_both"] = (
+            "gateway" in text and "auth" in text and "api" in text and
+            any(w in text for w in ("depend", "gateway ->", "gateway →", "diamond"))
+        )
+        if checks["gateway_depends_both"]:
+            score += 0.2
+
+        # 5. Correct build order — core first, gateway last (0.2)
+        checks["correct_build_order"] = False
+        # Check if core appears before gateway in the explanation
+        core_pos = text.find("core")
+        gateway_pos = text.rfind("gateway")
+        if core_pos >= 0 and gateway_pos >= 0 and core_pos < gateway_pos:
+            # Also check for order language
+            if any(w in text for w in ("order", "first", "last", "level", "before", "then")):
+                checks["correct_build_order"] = True
+        if checks["correct_build_order"]:
+            score += 0.2
+
+        n_correct = sum(1 for v in checks.values() if v)
+        passed = n_correct >= 3  # At least 3 of 5 facts correct
+        return {"passed": passed, "score": score, "checks": checks}
 
     return {"task": task, "verify": verify}
 
@@ -601,6 +754,12 @@ def write_transcript_log(metrics_dict, filepath):
         f.write(f"# Time: {metrics_dict['wall_time_s']:.1f}s\n")
         f.write(f"# Completed: {metrics_dict['task_completed']}, "
                 f"Verified: {metrics_dict['success']}\n")
+        correctness = metrics_dict.get("correctness", 0.0)
+        checks = metrics_dict.get("correctness_checks", {})
+        f.write(f"# Correctness: {correctness:.0%}\n")
+        if checks:
+            for k, v in checks.items():
+                f.write(f"#   {k}: {'PASS' if v else 'FAIL'}\n")
         f.write("\n")
 
         step = 0
@@ -694,12 +853,26 @@ def print_scenario_dashboard(scenario_name, desc, without, with_t):
     print(f"  │   {'Tok/call':14s} {w_tok // max(w_calls, 1):>8,d}  {t_tok // max(t_calls, 1):>8,d}{'':>16s}│")
     print(f"  │{'':>{W - 4}}│")
 
-    # Status
+    # Status & Correctness
     w_status = _status(without["task_completed"], without["success"])
     t_status = _status(with_t["task_completed"], with_t["success"])
-    print(f"  │ {'STATUS':<{W - 6}} │")
-    print(f"  │   Without:     {w_status:<{W - 21}}│")
-    print(f"  │   With Takumi: {t_status:<{W - 21}}│")
+    w_score = without.get("correctness", 0.0)
+    t_score = with_t.get("correctness", 0.0)
+    print(f"  │ {'STATUS & CORRECTNESS':<{W - 6}} │")
+    print(f"  │   {'':14s} {'Without':>8s}  {'Takumi':>8s}               │")
+    print(f"  │   {'Status':14s} {w_status:>8s}  {t_status:>8s}               │")
+    print(f"  │   {'Correctness':14s} {w_score:>7.0%}  {t_score:>8.0%}               │")
+
+    # Show individual checks
+    w_checks = without.get("correctness_checks", {})
+    t_checks = with_t.get("correctness_checks", {})
+    all_check_keys = list(dict.fromkeys(list(w_checks.keys()) + list(t_checks.keys())))
+    for key in all_check_keys:
+        w_val = "✓" if w_checks.get(key) else "✗"
+        t_val = "✓" if t_checks.get(key) else "✗"
+        label = key.replace("_", " ")
+        print(f"  │     {label:12s} {w_val:>8s}  {t_val:>8s}               │")
+
     print(f"  └{'─' * (W - 4)}┘")
     print()
 
@@ -737,8 +910,8 @@ def print_summary_dashboard(all_results, scenarios):
     print(f"  ├{'─' * (W - 4)}┤")
 
     # Per-scenario summary row
-    print(f"  │ {'Scenario':<24s} {'Tokens':>14s} {'Time':>10s} {'Calls':>8s} │")
-    print(f"  │ {'':─<24s} {'':─>14s} {'':─>10s} {'':─>8s} │")
+    print(f"  │ {'Scenario':<20s} {'Tokens':>11s} {'Time':>8s} {'Calls':>7s} {'Score':>9s} │")
+    print(f"  │ {'':─<20s} {'':─>11s} {'':─>8s} {'':─>7s} {'':─>9s} │")
 
     tot_w_tok = tot_t_tok = 0
     tot_w_time = tot_t_time = 0.0
@@ -753,7 +926,7 @@ def print_summary_dashboard(all_results, scenarios):
         t = r.get("with_takumi", {})
         if "error" in w or "error" in t:
             name = SCENARIOS[sid]["name"]
-            print(f"  │ {name:<24s} {'ERROR':>14s} {'':>10s} {'':>8s} │")
+            print(f"  │ {name:<20s} {'ERROR':>11s} {'':>8s} {'':>7s} {'':>9s} │")
             continue
 
         n_scenarios += 1
@@ -774,9 +947,12 @@ def print_summary_dashboard(all_results, scenarios):
 
         tok_s = _pct_str(w_tok, t_tok)
         time_s = _pct_str(w["wall_time_s"], t["wall_time_s"])
-        calls_s = f"{w['tool_calls']} -> {t['tool_calls']}"
+        calls_s = f"{w['tool_calls']}->{t['tool_calls']}"
+        w_score = w.get("correctness", 0.0)
+        t_score = t.get("correctness", 0.0)
+        score_s = f"{w_score:.0%}/{t_score:.0%}"
 
-        print(f"  │ {name:<24s} {tok_s:>14s} {time_s:>10s} {calls_s:>8s} │")
+        print(f"  │ {name:<20s} {tok_s:>11s} {time_s:>8s} {calls_s:>7s} {score_s:>9s} │")
 
     print(f"  ├{'─' * (W - 4)}┤")
 
@@ -868,7 +1044,10 @@ def main():
             try:
                 config = scenario["setup"](workdir, with_takumi)
                 metrics = run_agent(config["task"], workdir, with_takumi, MODEL)
-                metrics.success = config["verify"](workdir)
+                verdict = config["verify"](workdir, metrics)
+                metrics.success = verdict["passed"]
+                metrics.correctness = verdict["score"]
+                metrics.correctness_checks = verdict["checks"]
 
                 results[mode_label] = asdict(metrics)
                 print(
@@ -952,8 +1131,8 @@ def main():
                 slim_results[sid][mode] = data
 
     # Compute totals for JSON
-    totals = {"without": {"tokens": 0, "turns": 0, "calls": 0, "errors": 0},
-              "with":    {"tokens": 0, "turns": 0, "calls": 0, "errors": 0}}
+    totals = {"without": {"tokens": 0, "turns": 0, "calls": 0, "errors": 0, "correctness": 0.0, "scenarios": 0},
+              "with":    {"tokens": 0, "turns": 0, "calls": 0, "errors": 0, "correctness": 0.0, "scenarios": 0}}
     for results in all_results.values():
         for mode, key in [("without", "without_takumi"), ("with", "with_takumi")]:
             r = results.get(key, {})
@@ -963,6 +1142,8 @@ def main():
             totals[mode]["turns"] += r.get("turns", 0)
             totals[mode]["calls"] += r.get("tool_calls", 0)
             totals[mode]["errors"] += r.get("errors", 0)
+            totals[mode]["correctness"] += r.get("correctness", 0.0)
+            totals[mode]["scenarios"] += 1
 
     with open(output_file, "w") as f:
         json.dump(

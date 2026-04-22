@@ -103,7 +103,7 @@ def generate_section_single(version, results):
             f"| Time | {wo.get('wall_time_s', 0):.1f}s | {wi.get('wall_time_s', 0):.1f}s | {pct(wo.get('wall_time_s', 0), wi.get('wall_time_s', 0))} |",
             f"| Turns | {wo.get('turns', 0)} | {wi.get('turns', 0)} | {pct(wo.get('turns', 0), wi.get('turns', 0))} |",
             f"| Tool calls | {wo.get('tool_calls', 0)} | {wi.get('tool_calls', 0)} | {pct(wo.get('tool_calls', 0), wi.get('tool_calls', 0))} |",
-            f"| Completed | {'yes' if wo.get('task_completed') else 'no'} | {'yes' if wi.get('task_completed') else 'no'} | |",
+            f"| Correctness | {wo.get('correctness', 0) * 100:.0f}% | {wi.get('correctness', 0) * 100:.0f}% | |",
             "",
         ])
 
@@ -129,8 +129,8 @@ def generate_section_multi(version, combined):
         f"## {version}\n",
         f"> {date} | models: {model_list}\n",
         "### Token Savings by Model\n",
-        "| Model | Without Takumi | With Takumi | Saved | Turns | Tool Calls |",
-        "|-------|---------------|-------------|-------|-------|------------|",
+        "| Model | Without Takumi | With Takumi | Saved | Turns | Tool Calls | Correctness |",
+        "|-------|---------------|-------------|-------|-------|------------|-------------|",
     ]
 
     # Track which models ran partial scenarios
@@ -154,13 +154,22 @@ def generate_section_multi(version, combined):
             partial_models.append((short_name(model), scenario_count))
             suffix = "*"
 
+        # Compute average correctness score
+        w_corr = w.get("correctness", 0.0)
+        t_corr = t.get("correctness", 0.0)
+        w_n = w.get("scenarios", 0) or 1
+        t_n = t.get("scenarios", 0) or 1
+        w_avg = w_corr / w_n * 100
+        t_avg = t_corr / t_n * 100
+
         lines.append(
             f"| **{short_name(model)}**{suffix} "
             f"| {fmt(w.get('tokens', 0))} "
             f"| {fmt(t.get('tokens', 0))} "
             f"| **{pct(w.get('tokens', 0), t.get('tokens', 0))}** "
             f"| {w.get('turns', 0)} / {t.get('turns', 0)} "
-            f"| {w.get('calls', 0)} / {t.get('calls', 0)} |"
+            f"| {w.get('calls', 0)} / {t.get('calls', 0)} "
+            f"| {w_avg:.0f}% / {t_avg:.0f}% |"
         )
 
     if partial_models:
@@ -233,6 +242,17 @@ def generate_section_multi(version, combined):
                 else:
                     row += f" {wv} | {tv} |"
             lines.append(row)
+
+        # Correctness row
+        corr_row = "| Correctness |"
+        for model in avail:
+            data = models_data[model]
+            wo = data["scenarios"][sid].get("without_takumi", {})
+            wi = data["scenarios"][sid].get("with_takumi", {})
+            w_corr = wo.get("correctness", 0.0) * 100
+            t_corr = wi.get("correctness", 0.0) * 100
+            corr_row += f" {w_corr:.0f}% | {t_corr:.0f}% |"
+        lines.append(corr_row)
 
         # Saved row
         saved_row = "| **Saved** |"
