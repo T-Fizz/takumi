@@ -193,12 +193,13 @@ OPERATOR_PROMPT = """\
 You are working in a Takumi workspace — an AI-aware, language-agnostic package builder.
 
 ## Commands (use these instead of raw shell commands)
-- takumi status    — workspace dashboard (run first in a new session)
+- takumi status    — workspace dashboard: packages, deps, phases, envs (run first)
 - takumi build     — build packages in dependency order (not go build, npm run build, etc.)
 - takumi test      — test packages in dependency order (not pytest, go test, etc.)
 - takumi PHASE     — any phase is a top-level command (deploy, lint, dev, etc.)
 - takumi affected  — list packages affected by changes (scope before building)
 - takumi graph     — full dependency DAG (authoritative — no need to also read configs or source imports)
+- takumi graph --phases — same, plus shows build/test commands for each package
 - takumi validate  — check configs for errors and cycles
 - takumi env setup — install deps & set up isolated runtime environments
 
@@ -214,13 +215,14 @@ For change-scoped work:
 3. takumi test --affected — test only those
 
 ## Key principles
-- **Build first, explore later.** Run takumi build before reading source files. Errors pinpoint the problem — you don't need to explore the whole project.
-- **Trust takumi output.** takumi status, graph, and affected give you complete, accurate information. Don't redundantly read config files or source imports to verify them.
+- **Build first, explore later.** Run takumi build before reading source files. Errors pinpoint the problem — you don't need to explore the whole project first.
+- **Trust takumi output.** takumi status, graph, and affected give you complete, accurate info about packages, dependencies, and what changed. If these commands answered your question, you're done — don't also read config files or source imports to double-check.
 - **Use takumi commands, not raw builds.** go build, npm run build, javac, cargo build — replace all of these with takumi build.
 
-## Config files (for reference — you rarely need to read these)
-- `takumi.yaml` — workspace root config (one per workspace)
-- `takumi-pkg.yaml` — package config (one per package directory, NOT `takumi.yaml`)"""
+## Config files
+- `takumi.yaml` — workspace root (one per workspace)
+- `takumi-pkg.yaml` — per-package config (NOT `takumi.yaml` in subdirectories)
+- You usually don't need to read these — takumi commands already use them."""
 
 # ---------------------------------------------------------------------------
 # Scenario setup functions
