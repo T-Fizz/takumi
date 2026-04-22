@@ -432,14 +432,16 @@ def setup_scoped_rebuild(workdir, with_takumi):
         # Look through transcript for evidence the agent recognized dependencies
         transcript_text = " ".join(
             e.get("output", "") + " " + e.get("text", "") + " " +
-            json.dumps(e.get("input", {}))
+            e.get("input", {}).get("summary", "") + " " +
+            e.get("input", {}).get("command", "")
             for e in metrics.transcript
         ).lower()
-        # Agent should mention that api and web depend on shared
+        # Agent should mention that api and web depend on/are affected by shared
+        dep_words = ("affected", "depend", "←", "<-", "downstream", "consumer")
         found_api_affected = ("api" in transcript_text and
-                              ("affected" in transcript_text or "depend" in transcript_text))
+                              any(w in transcript_text for w in dep_words))
         found_web_affected = ("web" in transcript_text and
-                              ("affected" in transcript_text or "depend" in transcript_text))
+                              any(w in transcript_text for w in dep_words))
         checks["identified_affected"] = found_api_affected and found_web_affected
         if checks["identified_affected"]:
             score += 0.3
@@ -523,45 +525,62 @@ def setup_understand_structure(workdir, with_takumi):
         checks = {}
         score = 0.0
 
-        # Gather all assistant text and task_complete summaries
+        # Gather ALL text: assistant messages, tool output, task_complete summaries
         text = " ".join(
-            e.get("text", "") + " " + e.get("input", {}).get("summary", "")
+            e.get("text", "") + " " +
+            e.get("output", "") + " " +
+            e.get("input", {}).get("summary", "") + " " +
+            e.get("input", {}).get("command", "")
             for e in metrics.transcript
         ).lower()
 
         # 1. Identifies core as the base / no-dependency package (0.2)
         checks["core_is_base"] = (
             "core" in text and
-            any(w in text for w in ("no depend", "no dep", "base", "root", "foundation", "leaf"))
+            any(w in text for w in (
+                "no depend", "no dep", "no deps", "base", "root",
+                "foundation", "leaf", "level 0", "independent",
+            ))
         )
         if checks["core_is_base"]:
             score += 0.2
 
         # 2. Identifies auth → core dependency (0.2)
+        # Match natural language, arrows, and takumi graph output (← means "depends on")
+        dep_patterns_auth = (
+            "auth depends on core", "auth -> core", "auth → core",
+            "auth: core", "auth relies on core", "auth imports core",
+            # takumi graph output: "auth ← core" means auth depends on core
+            "auth ← core", "auth <- core",
+            # yaml-style
+            "auth\n", "dependencies:\n  - core",
+        )
         checks["auth_depends_core"] = (
             "auth" in text and "core" in text and
-            any(p in text for p in ("auth depends on core", "auth -> core",
-                                     "auth → core", "auth: core",
-                                     "auth relies on core", "auth imports core"))
+            any(p in text for p in dep_patterns_auth)
         )
-        # Fallback: just check both are mentioned near dependency language
         if not checks["auth_depends_core"]:
             checks["auth_depends_core"] = (
-                "auth" in text and "core" in text and "depend" in text
+                "auth" in text and "core" in text and
+                any(w in text for w in ("depend", "←", "<-", "level"))
             )
         if checks["auth_depends_core"]:
             score += 0.2
 
         # 3. Identifies api → core dependency (0.2)
+        dep_patterns_api = (
+            "api depends on core", "api -> core", "api → core",
+            "api: core", "api relies on core", "api imports core",
+            "api ← core", "api <- core",
+        )
         checks["api_depends_core"] = (
             "api" in text and "core" in text and
-            any(p in text for p in ("api depends on core", "api -> core",
-                                     "api → core", "api: core",
-                                     "api relies on core", "api imports core"))
+            any(p in text for p in dep_patterns_api)
         )
         if not checks["api_depends_core"]:
             checks["api_depends_core"] = (
-                "api" in text and "core" in text and "depend" in text
+                "api" in text and "core" in text and
+                any(w in text for w in ("depend", "←", "<-", "level"))
             )
         if checks["api_depends_core"]:
             score += 0.2
@@ -569,19 +588,23 @@ def setup_understand_structure(workdir, with_takumi):
         # 4. Identifies gateway → auth + api (diamond) (0.2)
         checks["gateway_depends_both"] = (
             "gateway" in text and "auth" in text and "api" in text and
-            any(w in text for w in ("depend", "gateway ->", "gateway →", "diamond"))
+            any(w in text for w in (
+                "depend", "gateway ->", "gateway →", "diamond",
+                "gateway ←", "gateway <-", "level 2",
+            ))
         )
         if checks["gateway_depends_both"]:
             score += 0.2
 
         # 5. Correct build order — core first, gateway last (0.2)
         checks["correct_build_order"] = False
-        # Check if core appears before gateway in the explanation
         core_pos = text.find("core")
         gateway_pos = text.rfind("gateway")
         if core_pos >= 0 and gateway_pos >= 0 and core_pos < gateway_pos:
-            # Also check for order language
-            if any(w in text for w in ("order", "first", "last", "level", "before", "then")):
+            if any(w in text for w in (
+                "order", "first", "last", "level", "before", "then",
+                "level 0", "level 1", "level 2",
+            )):
                 checks["correct_build_order"] = True
         if checks["correct_build_order"]:
             score += 0.2
