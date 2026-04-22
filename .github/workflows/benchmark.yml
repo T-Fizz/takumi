@@ -53,7 +53,7 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           TAKUMI_BIN: build/takumi
-          BENCH_MODEL: claude-haiku-4-5-20251001
+          BENCH_MODEL: claude-sonnet-4-6
         run: python3 tests/benchmark/perf/benchmark.py
 
       - name: Update benchmarks page

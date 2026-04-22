@@ -21,10 +21,10 @@ var benchNote string
 
 func init() {
 	benchmarkCmd.Flags().BoolVar(&benchPublish, "publish", false, "publish results to a GitHub Gist dashboard")
-	benchmarkCmd.Flags().StringVar(&benchModel, "model", "", "override the LLM model (default: claude-haiku-4-5-20251001)")
+	benchmarkCmd.Flags().StringVar(&benchModel, "model", "", "override the LLM model (default: claude-sonnet-4-6)")
 
 	benchmarkIterateCmd.Flags().BoolVar(&benchPublish, "publish", false, "publish results to a GitHub Gist dashboard")
-	benchmarkIterateCmd.Flags().StringVar(&benchModel, "model", "", "override the LLM model (default: claude-haiku-4-5-20251001)")
+	benchmarkIterateCmd.Flags().StringVar(&benchModel, "model", "", "override the LLM model (default: claude-sonnet-4-6)")
 	benchmarkIterateCmd.Flags().StringVar(&benchNote, "note", "", "annotation for this run (e.g. 'improved README')")
 
 	benchmarkCmd.AddCommand(benchmarkIterateCmd)

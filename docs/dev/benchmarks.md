@@ -3,7 +3,7 @@
 Automated results from `takumi benchmark` — comparing AI agent efficiency
 with and without Takumi operator instructions across identical tasks.
 
-**Model:** `claude-haiku-4-5-20251001` | **Max turns:** 25
+**Model:** `claude-sonnet-4-6` (configurable via `BENCH_MODEL`) | **Max turns:** 25
 
 ---
 
@@ -11,7 +11,7 @@ with and without Takumi operator instructions across identical tasks.
 
 ## v1.0.1
 
-> 2026-04-21
+> 2026-04-21 | model: `claude-haiku-4-5-20251001`
 
 ### Overall
 

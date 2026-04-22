@@ -43,7 +43,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 MAX_TURNS = 25
-MODEL = os.environ.get("BENCH_MODEL", "claude-haiku-4-5-20251001")
+MODEL = os.environ.get("BENCH_MODEL", "claude-sonnet-4-6")
 TAKUMI_BIN = os.environ.get("TAKUMI_BIN", "")
 
 GIT_ENV = {

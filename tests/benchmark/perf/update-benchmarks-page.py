@@ -66,11 +66,18 @@ def generate_section(version: str, results: dict) -> str:
         if sid not in results["scenarios"]:
             continue
 
-        wo = results["scenarios"][sid]["without_takumi"]
-        wi = results["scenarios"][sid]["with_takumi"]
+        scenario = results["scenarios"][sid]
+        wo = scenario.get("without_takumi", {})
+        wi = scenario.get("with_takumi", {})
 
-        w_tok = wo["input_tokens"] + wo["output_tokens"]
-        t_tok = wi["input_tokens"] + wi["output_tokens"]
+        # Skip scenarios where either mode errored without producing metrics
+        if wo.get("error") and "input_tokens" not in wo:
+            continue
+        if wi.get("error") and "input_tokens" not in wi:
+            continue
+
+        w_tok = wo.get("input_tokens", 0) + wo.get("output_tokens", 0)
+        t_tok = wi.get("input_tokens", 0) + wi.get("output_tokens", 0)
 
         lines.extend([
             f"#### {meta['title']}\n",
@@ -78,9 +85,9 @@ def generate_section(version: str, results: dict) -> str:
             "| Metric | Without | With Takumi | Saved |",
             "|--------|---------|-------------|-------|",
             f"| Tokens | {fmt(w_tok)} | {fmt(t_tok)} | {pct(w_tok, t_tok)} |",
-            f"| Time | {wo['wall_time_s']:.1f}s | {wi['wall_time_s']:.1f}s | {pct(wo['wall_time_s'], wi['wall_time_s'])} |",
-            f"| Turns | {wo['turns']} | {wi['turns']} | {pct(wo['turns'], wi['turns'])} |",
-            f"| Tool calls | {wo['tool_calls']} | {wi['tool_calls']} | {pct(wo['tool_calls'], wi['tool_calls'])} |",
+            f"| Time | {wo.get('wall_time_s', 0):.1f}s | {wi.get('wall_time_s', 0):.1f}s | {pct(wo.get('wall_time_s', 0), wi.get('wall_time_s', 0))} |",
+            f"| Turns | {wo.get('turns', 0)} | {wi.get('turns', 0)} | {pct(wo.get('turns', 0), wi.get('turns', 0))} |",
+            f"| Tool calls | {wo.get('tool_calls', 0)} | {wi.get('tool_calls', 0)} | {pct(wo.get('tool_calls', 0), wi.get('tool_calls', 0))} |",
             f"| Completed | {'yes' if wo.get('task_completed') else 'no'} | {'yes' if wi.get('task_completed') else 'no'} | |",
             "",
         ])
@@ -111,7 +118,6 @@ def main():
     with open(results_path) as f:
         results = json.load(f)
 
-    section = generate_section(args.version, results)
     page = page_path.read_text()
 
     if MARKER not in page:
@@ -123,6 +129,7 @@ def main():
         print(f"Version {args.version} already in {page_path} — skipping")
         sys.exit(0)
 
+    section = generate_section(args.version, results)
     page = page.replace(MARKER, f"{MARKER}\n\n{section}\n---\n", 1)
     page_path.write_text(page)
     print(f"Added {args.version} results to {page_path}")
