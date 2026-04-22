@@ -28,7 +28,7 @@ jobs:
             scenarios: ""
           - model: claude-opus-4-6
             slug: opus
-            scenarios: "fix-build-error"
+            scenarios: ""
     outputs:
       tag: ${{ steps.version.outputs.tag }}
     steps:
