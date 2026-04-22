@@ -102,12 +102,13 @@ fi
 # --- Install binary and symlink --------------------------------------------
 
 NEEDS_SUDO=""
+# Try to create the dir first (handles custom dirs that don't exist yet).
+mkdir -p "$INSTALL_DIR" 2>/dev/null || true
 if [ ! -w "$INSTALL_DIR" ]; then
     NEEDS_SUDO="sudo"
     echo "Note: ${INSTALL_DIR} requires elevated permissions."
+    $NEEDS_SUDO mkdir -p "$INSTALL_DIR"
 fi
-
-$NEEDS_SUDO mkdir -p "$INSTALL_DIR"
 $NEEDS_SUDO cp "$TMPDIR/takumi" "$INSTALL_DIR/takumi"
 $NEEDS_SUDO chmod +x "$INSTALL_DIR/takumi"
 

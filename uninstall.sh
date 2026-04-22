@@ -67,7 +67,8 @@ echo "Found takumi in: ${DIR}"
 # --- Check for Homebrew install -------------------------------------------
 
 if command -v brew >/dev/null 2>&1; then
-    if brew list takumi >/dev/null 2>&1; then
+    BREW_PREFIX=$(brew --prefix 2>/dev/null || true)
+    if brew list takumi >/dev/null 2>&1 && echo "$DIR" | grep -q "$BREW_PREFIX"; then
         echo ""
         echo "It looks like takumi was installed via Homebrew."
         echo "Please uninstall with:"
