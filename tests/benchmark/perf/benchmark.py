@@ -1972,6 +1972,970 @@ def _verify_understand_structure(metrics):
 
 
 # ---------------------------------------------------------------------------
+# Find Utility — discover existing utility in workspace and wire it up
+# ---------------------------------------------------------------------------
+# 3-package workspace: app, shared, utils.
+# utils has format_duration(seconds) -> "2h 15m 30s".
+# app prints raw seconds. Agent must find the utility and use it.
+
+def _find_utility_verify(wd, lang):
+    """Common verify for find-utility scenarios."""
+    checks = {}
+    score = 0.0
+
+    # 1. Build passes (0.3)
+    if lang == "Go":
+        r = subprocess.run("go build ./...", shell=True, cwd=f"{wd}/app",
+                           capture_output=True, text=True)
+    elif lang == "Python":
+        r = subprocess.run("python3 app/main.py", shell=True, cwd=wd,
+                           capture_output=True, text=True)
+    elif lang == "TypeScript":
+        r = subprocess.run("npx tsc -p tsconfig.json", shell=True, cwd=f"{wd}/app",
+                           capture_output=True, text=True)
+    elif lang == "Rust":
+        r = subprocess.run("cargo build", shell=True, cwd=wd,
+                           capture_output=True, text=True)
+    elif lang == "Java":
+        r = subprocess.run("javac -cp ../utils/src:../shared/src src/Main.java",
+                           shell=True, cwd=f"{wd}/app", capture_output=True, text=True)
+    checks["build_passes"] = r.returncode == 0
+    if checks["build_passes"]:
+        score += 0.3
+
+    # 2. Raw seconds removed from app (0.2)
+    app_files = {
+        "Go": f"{wd}/app/main.go",
+        "Python": f"{wd}/app/main.py",
+        "TypeScript": f"{wd}/app/index.ts",
+        "Rust": f"{wd}/app/src/main.rs",
+        "Java": f"{wd}/app/src/Main.java",
+    }
+    try:
+        source = Path(app_files[lang]).read_text()
+        checks["raw_removed"] = "seconds" not in source.lower() or "format" in source.lower()
+    except Exception:
+        checks["raw_removed"] = False
+    if checks["raw_removed"]:
+        score += 0.2
+
+    # 3. App uses format_duration from utils (0.3)
+    checks["uses_utility"] = False
+    if checks["raw_removed"]:
+        patterns = {
+            "Go": ["utils.", "format_duration", "FormatDuration"],
+            "Python": ["format_duration"],
+            "TypeScript": ["formatDuration", "format_duration"],
+            "Rust": ["format_duration"],
+            "Java": ["formatDuration", "FormatDuration", "format_duration"],
+        }
+        if any(p in source for p in patterns.get(lang, [])):
+            checks["uses_utility"] = True
+    if checks["uses_utility"]:
+        score += 0.3
+
+    # 4. No collateral damage — shared still builds (0.2)
+    if lang == "Go":
+        r2 = subprocess.run("go build ./...", shell=True, cwd=f"{wd}/shared",
+                            capture_output=True, text=True)
+    elif lang == "Python":
+        r2 = subprocess.run("python3 -c 'from shared.lib import greet'",
+                            shell=True, cwd=wd, capture_output=True, text=True)
+    elif lang == "TypeScript":
+        r2 = subprocess.run("npx tsc -p tsconfig.json", shell=True, cwd=f"{wd}/shared",
+                            capture_output=True, text=True)
+    elif lang == "Rust":
+        r2 = subprocess.run("cargo build -p shared", shell=True, cwd=wd,
+                            capture_output=True, text=True)
+    elif lang == "Java":
+        r2 = subprocess.run("javac src/Lib.java", shell=True, cwd=f"{wd}/shared",
+                            capture_output=True, text=True)
+    checks["no_collateral"] = r2.returncode == 0
+    if checks["no_collateral"]:
+        score += 0.2
+
+    return {
+        "passed": checks["build_passes"] and checks["uses_utility"],
+        "score": score, "checks": checks,
+    }
+
+
+def _write_utils_go(workdir):
+    os.makedirs(f"{workdir}/utils")
+    Path(f"{workdir}/utils/go.mod").write_text("module example.com/utils\n\ngo 1.22\n")
+    Path(f"{workdir}/utils/format.go").write_text("""\
+package utils
+
+import "fmt"
+
+func FormatDuration(seconds int) string {
+\th := seconds / 3600
+\tm := (seconds % 3600) / 60
+\ts := seconds % 60
+\tif h > 0 {
+\t\treturn fmt.Sprintf("%dh %dm %ds", h, m, s)
+\t}
+\tif m > 0 {
+\t\treturn fmt.Sprintf("%dm %ds", m, s)
+\t}
+\treturn fmt.Sprintf("%ds", s)
+}
+""")
+
+
+def setup_find_utility_go(workdir, with_takumi):
+    """3-package Go workspace: app uses raw seconds, utils has FormatDuration."""
+    os.makedirs(f"{workdir}/shared")
+    Path(f"{workdir}/shared/go.mod").write_text("module example.com/shared\n\ngo 1.22\n")
+    Path(f"{workdir}/shared/lib.go").write_text(
+        'package shared\n\nfunc Greet(name string) string { return "Hello, " + name }\n'
+    )
+
+    _write_utils_go(workdir)
+
+    os.makedirs(f"{workdir}/app")
+    Path(f"{workdir}/app/go.mod").write_text("module example.com/app\n\ngo 1.22\n")
+    Path(f"{workdir}/app/main.go").write_text("""\
+package main
+
+import "fmt"
+
+func main() {
+\tuptime := 3661
+\tfmt.Printf("Uptime: %d seconds\\n", uptime)
+}
+""")
+
+    _git_init(workdir)
+
+    if with_takumi:
+        _takumi_init(workdir)
+        os.remove(f"{workdir}/takumi-pkg.yaml")
+        Path(f"{workdir}/takumi.yaml").write_text(
+            "workspace:\n  name: myapp\n  ignore:\n    - build/\n"
+        )
+        Path(f"{workdir}/shared/takumi-pkg.yaml").write_text("""\
+package:
+  name: shared
+  version: 0.1.0
+phases:
+  build:
+    commands:
+      - go build ./...
+""")
+        Path(f"{workdir}/utils/takumi-pkg.yaml").write_text("""\
+package:
+  name: utils
+  version: 0.1.0
+phases:
+  build:
+    commands:
+      - go build ./...
+""")
+        Path(f"{workdir}/app/takumi-pkg.yaml").write_text("""\
+package:
+  name: app
+  version: 0.1.0
+dependencies:
+  - shared
+phases:
+  build:
+    commands:
+      - go build ./...
+""")
+        _git_commit(workdir, "add takumi")
+
+    task = (
+        "The app displays server uptime as raw seconds which isn't user-friendly. "
+        "Check if there's already a duration formatting utility in this workspace. "
+        "If so, use it in the app. If not, implement one. "
+        "Make sure the app builds. Call task_complete when done."
+    )
+
+    def verify(wd, metrics):
+        return _find_utility_verify(wd, "Go")
+
+    return {"task": task, "verify": verify}
+
+
+def setup_find_utility_python(workdir, with_takumi):
+    """3-package Python workspace: app uses raw seconds, utils has format_duration."""
+    os.makedirs(f"{workdir}/shared")
+    Path(f"{workdir}/shared/__init__.py").write_text("")
+    Path(f"{workdir}/shared/lib.py").write_text(
+        'def greet(name):\n    return f"Hello, {name}"\n'
+    )
+
+    os.makedirs(f"{workdir}/utils")
+    Path(f"{workdir}/utils/__init__.py").write_text("")
+    Path(f"{workdir}/utils/format.py").write_text("""\
+def format_duration(seconds):
+    h = seconds // 3600
+    m = (seconds % 3600) // 60
+    s = seconds % 60
+    parts = []
+    if h > 0:
+        parts.append(f"{h}h")
+    if m > 0:
+        parts.append(f"{m}m")
+    parts.append(f"{s}s")
+    return " ".join(parts)
+""")
+
+    os.makedirs(f"{workdir}/app")
+    Path(f"{workdir}/app/__init__.py").write_text("")
+    Path(f"{workdir}/app/main.py").write_text("""\
+import sys
+sys.path.insert(0, ".")
+from shared.lib import greet
+
+def run():
+    uptime = 3661
+    print(f"Uptime: {uptime} seconds")
+    print(greet("World"))
+    return uptime
+
+if __name__ == "__main__":
+    run()
+""")
+
+    _git_init(workdir)
+
+    if with_takumi:
+        _takumi_init(workdir)
+        os.remove(f"{workdir}/takumi-pkg.yaml")
+        Path(f"{workdir}/takumi.yaml").write_text(
+            "workspace:\n  name: myapp\n"
+        )
+        Path(f"{workdir}/shared/takumi-pkg.yaml").write_text("""\
+package:
+  name: shared
+  version: 0.1.0
+phases:
+  build:
+    commands:
+      - python3 -c "import shared.lib"
+""")
+        Path(f"{workdir}/utils/takumi-pkg.yaml").write_text("""\
+package:
+  name: utils
+  version: 0.1.0
+phases:
+  build:
+    commands:
+      - python3 -c "import utils.format"
+""")
+        Path(f"{workdir}/app/takumi-pkg.yaml").write_text("""\
+package:
+  name: app
+  version: 0.1.0
+dependencies:
+  - shared
+phases:
+  build:
+    commands:
+      - python3 app/main.py
+""")
+        _git_commit(workdir, "add takumi")
+
+    task = (
+        "The app displays server uptime as raw seconds which isn't user-friendly. "
+        "Check if there's already a duration formatting utility in this workspace. "
+        "If so, use it in the app. If not, implement one. "
+        "Make sure the app runs. Call task_complete when done."
+    )
+
+    def verify(wd, metrics):
+        return _find_utility_verify(wd, "Python")
+
+    return {"task": task, "verify": verify}
+
+
+def setup_find_utility_ts(workdir, with_takumi):
+    """3-package TS workspace: app uses raw seconds, utils has formatDuration."""
+    os.makedirs(f"{workdir}/shared")
+    Path(f"{workdir}/shared/index.ts").write_text(
+        'export function greet(name: string): string { return `Hello, ${name}`; }\n'
+    )
+    Path(f"{workdir}/shared/tsconfig.json").write_text(
+        '{"compilerOptions":{"outDir":"dist","rootDir":".","strict":true},'
+        '"include":["*.ts"]}\n'
+    )
+
+    os.makedirs(f"{workdir}/utils")
+    Path(f"{workdir}/utils/index.ts").write_text("""\
+export function formatDuration(seconds: number): string {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = seconds % 60;
+    const parts: string[] = [];
+    if (h > 0) parts.push(`${h}h`);
+    if (m > 0) parts.push(`${m}m`);
+    parts.push(`${s}s`);
+    return parts.join(" ");
+}
+""")
+    Path(f"{workdir}/utils/tsconfig.json").write_text(
+        '{"compilerOptions":{"outDir":"dist","rootDir":".","strict":true},'
+        '"include":["*.ts"]}\n'
+    )
+
+    os.makedirs(f"{workdir}/app")
+    Path(f"{workdir}/app/index.ts").write_text("""\
+const uptime = 3661;
+console.log(`Uptime: ${uptime} seconds`);
+""")
+    Path(f"{workdir}/app/tsconfig.json").write_text(
+        '{"compilerOptions":{"outDir":"dist","rootDir":".","strict":true},'
+        '"include":["*.ts"]}\n'
+    )
+
+    Path(f"{workdir}/tsconfig.json").write_text(
+        '{"files":[],"references":[{"path":"shared"},{"path":"utils"},{"path":"app"}]}\n'
+    )
+
+    _git_init(workdir)
+
+    if with_takumi:
+        _takumi_init(workdir)
+        os.remove(f"{workdir}/takumi-pkg.yaml")
+        Path(f"{workdir}/takumi.yaml").write_text(
+            "workspace:\n  name: myapp\n  ignore:\n    - dist/\n    - node_modules/\n"
+        )
+        Path(f"{workdir}/shared/takumi-pkg.yaml").write_text("""\
+package:
+  name: shared
+  version: 0.1.0
+phases:
+  build:
+    commands:
+      - npx tsc -p tsconfig.json
+""")
+        Path(f"{workdir}/utils/takumi-pkg.yaml").write_text("""\
+package:
+  name: utils
+  version: 0.1.0
+phases:
+  build:
+    commands:
+      - npx tsc -p tsconfig.json
+""")
+        Path(f"{workdir}/app/takumi-pkg.yaml").write_text("""\
+package:
+  name: app
+  version: 0.1.0
+dependencies:
+  - shared
+phases:
+  build:
+    commands:
+      - npx tsc -p tsconfig.json
+""")
+        _git_commit(workdir, "add takumi")
+
+    task = (
+        "The app displays server uptime as raw seconds which isn't user-friendly. "
+        "Check if there's already a duration formatting utility in this workspace. "
+        "If so, use it in the app. If not, implement one. "
+        "Make sure the app compiles. Call task_complete when done."
+    )
+
+    def verify(wd, metrics):
+        return _find_utility_verify(wd, "TypeScript")
+
+    return {"task": task, "verify": verify}
+
+
+def setup_find_utility_rust(workdir, with_takumi):
+    """3-package Rust workspace: app uses raw seconds, utils has format_duration."""
+    Path(f"{workdir}/Cargo.toml").write_text(
+        '[workspace]\nmembers = ["shared", "utils", "app"]\nresolver = "2"\n'
+    )
+
+    os.makedirs(f"{workdir}/shared/src")
+    Path(f"{workdir}/shared/Cargo.toml").write_text(
+        '[package]\nname = "shared"\nversion = "0.1.0"\nedition = "2021"\n'
+    )
+    Path(f"{workdir}/shared/src/lib.rs").write_text(
+        'pub fn greet(name: &str) -> String { format!("Hello, {}", name) }\n'
+    )
+
+    os.makedirs(f"{workdir}/utils/src")
+    Path(f"{workdir}/utils/Cargo.toml").write_text(
+        '[package]\nname = "utils"\nversion = "0.1.0"\nedition = "2021"\n'
+    )
+    Path(f"{workdir}/utils/src/lib.rs").write_text("""\
+pub fn format_duration(seconds: u64) -> String {
+    let h = seconds / 3600;
+    let m = (seconds % 3600) / 60;
+    let s = seconds % 60;
+    if h > 0 {
+        format!("{}h {}m {}s", h, m, s)
+    } else if m > 0 {
+        format!("{}m {}s", m, s)
+    } else {
+        format!("{}s", s)
+    }
+}
+""")
+
+    os.makedirs(f"{workdir}/app/src")
+    Path(f"{workdir}/app/Cargo.toml").write_text(
+        '[package]\nname = "app"\nversion = "0.1.0"\nedition = "2021"\n\n'
+        '[dependencies]\nshared = { path = "../shared" }\n'
+    )
+    Path(f"{workdir}/app/src/main.rs").write_text("""\
+use shared::greet;
+
+fn main() {
+    let uptime = 3661;
+    println!("Uptime: {} seconds", uptime);
+    println!("{}", greet("World"));
+}
+""")
+
+    _git_init(workdir)
+
+    if with_takumi:
+        _takumi_init(workdir)
+        os.remove(f"{workdir}/takumi-pkg.yaml")
+        Path(f"{workdir}/takumi.yaml").write_text(
+            "workspace:\n  name: myapp\n  ignore:\n    - target/\n"
+        )
+        Path(f"{workdir}/shared/takumi-pkg.yaml").write_text("""\
+package:
+  name: shared
+  version: 0.1.0
+phases:
+  build:
+    commands:
+      - cargo build -p shared
+""")
+        Path(f"{workdir}/utils/takumi-pkg.yaml").write_text("""\
+package:
+  name: utils
+  version: 0.1.0
+phases:
+  build:
+    commands:
+      - cargo build -p utils
+""")
+        Path(f"{workdir}/app/takumi-pkg.yaml").write_text("""\
+package:
+  name: app
+  version: 0.1.0
+dependencies:
+  - shared
+phases:
+  build:
+    commands:
+      - cargo build -p app
+""")
+        os.makedirs(f"{workdir}/target", exist_ok=True)
+        _git_commit(workdir, "add takumi")
+
+    task = (
+        "The app displays server uptime as raw seconds which isn't user-friendly. "
+        "Check if there's already a duration formatting utility in this workspace. "
+        "If so, use it in the app. If not, implement one. "
+        "Make sure the app builds. Call task_complete when done."
+    )
+
+    def verify(wd, metrics):
+        return _find_utility_verify(wd, "Rust")
+
+    return {"task": task, "verify": verify}
+
+
+def setup_find_utility_java(workdir, with_takumi):
+    """3-package Java workspace: app uses raw seconds, utils has formatDuration."""
+    os.makedirs(f"{workdir}/shared/src")
+    Path(f"{workdir}/shared/src/Lib.java").write_text("""\
+public class Lib {
+    public static String greet(String name) {
+        return "Hello, " + name;
+    }
+}
+""")
+
+    os.makedirs(f"{workdir}/utils/src")
+    Path(f"{workdir}/utils/src/FormatUtils.java").write_text("""\
+public class FormatUtils {
+    public static String formatDuration(int seconds) {
+        int h = seconds / 3600;
+        int m = (seconds % 3600) / 60;
+        int s = seconds % 60;
+        if (h > 0) return h + "h " + m + "m " + s + "s";
+        if (m > 0) return m + "m " + s + "s";
+        return s + "s";
+    }
+}
+""")
+
+    os.makedirs(f"{workdir}/app/src")
+    Path(f"{workdir}/app/src/Main.java").write_text("""\
+public class Main {
+    public static void main(String[] args) {
+        int uptime = 3661;
+        System.out.println("Uptime: " + uptime + " seconds");
+        System.out.println(Lib.greet("World"));
+    }
+}
+""")
+
+    _git_init(workdir)
+
+    if with_takumi:
+        _takumi_init(workdir)
+        os.remove(f"{workdir}/takumi-pkg.yaml")
+        Path(f"{workdir}/takumi.yaml").write_text(
+            "workspace:\n  name: myapp\n"
+        )
+        Path(f"{workdir}/shared/takumi-pkg.yaml").write_text("""\
+package:
+  name: shared
+  version: 0.1.0
+phases:
+  build:
+    commands:
+      - javac src/Lib.java
+""")
+        Path(f"{workdir}/utils/takumi-pkg.yaml").write_text("""\
+package:
+  name: utils
+  version: 0.1.0
+phases:
+  build:
+    commands:
+      - javac src/FormatUtils.java
+""")
+        Path(f"{workdir}/app/takumi-pkg.yaml").write_text("""\
+package:
+  name: app
+  version: 0.1.0
+dependencies:
+  - shared
+phases:
+  build:
+    commands:
+      - javac -cp ../shared/src:../utils/src src/Main.java
+""")
+        _git_commit(workdir, "add takumi")
+
+    task = (
+        "The app displays server uptime as raw seconds which isn't user-friendly. "
+        "Check if there's already a duration formatting utility in this workspace. "
+        "If so, use it in the app. If not, implement one. "
+        "Make sure the app compiles. Call task_complete when done."
+    )
+
+    def verify(wd, metrics):
+        return _find_utility_verify(wd, "Java")
+
+    return {"task": task, "verify": verify}
+
+
+# ---------------------------------------------------------------------------
+# Implement Feature — no library exists, agent must search then implement
+# ---------------------------------------------------------------------------
+# 2-package workspace: app, shared.
+# Task asks for run-length encoding. Nothing exists. Agent must implement.
+
+def _implement_feature_verify(wd, lang):
+    """Common verify for implement-feature scenarios."""
+    checks = {}
+    score = 0.0
+
+    # 1. Build passes (0.3)
+    if lang == "Go":
+        r = subprocess.run("go build ./...", shell=True, cwd=f"{wd}/shared",
+                           capture_output=True, text=True)
+    elif lang == "Python":
+        r = subprocess.run(
+            'python3 -c "from shared.lib import greet; from shared.rle import rle_encode"',
+            shell=True, cwd=wd, capture_output=True, text=True)
+    elif lang == "TypeScript":
+        r = subprocess.run("npx tsc -p tsconfig.json", shell=True, cwd=f"{wd}/shared",
+                           capture_output=True, text=True)
+    elif lang == "Rust":
+        r = subprocess.run("cargo build", shell=True, cwd=wd,
+                           capture_output=True, text=True)
+    elif lang == "Java":
+        r = subprocess.run("javac src/*.java", shell=True, cwd=f"{wd}/shared",
+                           capture_output=True, text=True)
+    checks["build_passes"] = r.returncode == 0
+    if checks["build_passes"]:
+        score += 0.3
+
+    # 2. RLE function exists somewhere in the workspace (0.3)
+    checks["function_exists"] = False
+    for root, dirs, files in os.walk(wd):
+        dirs[:] = [d for d in dirs if d not in (".git", ".takumi", "target",
+                                                 "node_modules", "dist")]
+        for f in files:
+            if f.endswith((".go", ".py", ".ts", ".rs", ".java")):
+                try:
+                    src = Path(os.path.join(root, f)).read_text()
+                    if any(p in src.lower() for p in ("rle_encode", "rleencode",
+                                                       "run_length", "runlength")):
+                        checks["function_exists"] = True
+                        break
+                except Exception:
+                    pass
+        if checks["function_exists"]:
+            break
+    if checks["function_exists"]:
+        score += 0.3
+
+    # 3. App uses the function (0.2)
+    app_files = {
+        "Go": f"{wd}/app/main.go",
+        "Python": f"{wd}/app/main.py",
+        "TypeScript": f"{wd}/app/index.ts",
+        "Rust": f"{wd}/app/src/main.rs",
+        "Java": f"{wd}/app/src/Main.java",
+    }
+    checks["app_uses_rle"] = False
+    try:
+        source = Path(app_files[lang]).read_text()
+        if any(p in source.lower() for p in ("rle_encode", "rleencode",
+                                              "run_length", "runlength")):
+            checks["app_uses_rle"] = True
+    except Exception:
+        pass
+    if checks["app_uses_rle"]:
+        score += 0.2
+
+    # 4. No collateral — shared still works (0.2)
+    if lang == "Go":
+        r2 = subprocess.run("go build ./...", shell=True, cwd=f"{wd}/shared",
+                            capture_output=True, text=True)
+    elif lang == "Python":
+        r2 = subprocess.run("python3 -c 'from shared.lib import greet'",
+                            shell=True, cwd=wd, capture_output=True, text=True)
+    elif lang == "TypeScript":
+        r2 = subprocess.run("npx tsc -p tsconfig.json", shell=True, cwd=f"{wd}/shared",
+                            capture_output=True, text=True)
+    elif lang == "Rust":
+        r2 = subprocess.run("cargo build -p shared", shell=True, cwd=wd,
+                            capture_output=True, text=True)
+    elif lang == "Java":
+        r2 = subprocess.run("javac src/Lib.java", shell=True, cwd=f"{wd}/shared",
+                            capture_output=True, text=True)
+    checks["no_collateral"] = r2.returncode == 0
+    if checks["no_collateral"]:
+        score += 0.2
+
+    return {
+        "passed": checks["build_passes"] and checks["function_exists"],
+        "score": score, "checks": checks,
+    }
+
+
+_IMPLEMENT_TASK = (
+    "The app needs to compress repeated characters using run-length encoding "
+    "(e.g. 'aabbbcc' -> 'a2b3c2'). Check if there's already a utility for "
+    "this in the workspace. If not, implement rle_encode in the shared package "
+    "and call it from the app. Make sure everything builds. "
+    "Call task_complete when done."
+)
+
+
+def setup_implement_feature_go(workdir, with_takumi):
+    """2-package Go workspace: no RLE utility exists."""
+    os.makedirs(f"{workdir}/shared")
+    Path(f"{workdir}/shared/go.mod").write_text("module example.com/shared\n\ngo 1.22\n")
+    Path(f"{workdir}/shared/lib.go").write_text(
+        'package shared\n\nfunc Greet(name string) string { return "Hello, " + name }\n'
+    )
+
+    os.makedirs(f"{workdir}/app")
+    Path(f"{workdir}/app/go.mod").write_text("module example.com/app\n\ngo 1.22\n")
+    Path(f"{workdir}/app/main.go").write_text("""\
+package main
+
+import "fmt"
+
+func main() {
+\tfmt.Println("app starting")
+}
+""")
+
+    _git_init(workdir)
+
+    if with_takumi:
+        _takumi_init(workdir)
+        os.remove(f"{workdir}/takumi-pkg.yaml")
+        Path(f"{workdir}/takumi.yaml").write_text(
+            "workspace:\n  name: myapp\n  ignore:\n    - build/\n"
+        )
+        Path(f"{workdir}/shared/takumi-pkg.yaml").write_text("""\
+package:
+  name: shared
+  version: 0.1.0
+phases:
+  build:
+    commands:
+      - go build ./...
+""")
+        Path(f"{workdir}/app/takumi-pkg.yaml").write_text("""\
+package:
+  name: app
+  version: 0.1.0
+dependencies:
+  - shared
+phases:
+  build:
+    commands:
+      - go build ./...
+""")
+        _git_commit(workdir, "add takumi")
+
+    def verify(wd, metrics):
+        return _implement_feature_verify(wd, "Go")
+
+    return {"task": _IMPLEMENT_TASK, "verify": verify}
+
+
+def setup_implement_feature_python(workdir, with_takumi):
+    """2-package Python workspace: no RLE utility exists."""
+    os.makedirs(f"{workdir}/shared")
+    Path(f"{workdir}/shared/__init__.py").write_text("")
+    Path(f"{workdir}/shared/lib.py").write_text(
+        'def greet(name):\n    return f"Hello, {name}"\n'
+    )
+
+    os.makedirs(f"{workdir}/app")
+    Path(f"{workdir}/app/__init__.py").write_text("")
+    Path(f"{workdir}/app/main.py").write_text("""\
+import sys
+sys.path.insert(0, ".")
+from shared.lib import greet
+
+def run():
+    print("app starting")
+    print(greet("World"))
+
+if __name__ == "__main__":
+    run()
+""")
+
+    _git_init(workdir)
+
+    if with_takumi:
+        _takumi_init(workdir)
+        os.remove(f"{workdir}/takumi-pkg.yaml")
+        Path(f"{workdir}/takumi.yaml").write_text(
+            "workspace:\n  name: myapp\n"
+        )
+        Path(f"{workdir}/shared/takumi-pkg.yaml").write_text("""\
+package:
+  name: shared
+  version: 0.1.0
+phases:
+  build:
+    commands:
+      - python3 -c "import shared.lib"
+""")
+        Path(f"{workdir}/app/takumi-pkg.yaml").write_text("""\
+package:
+  name: app
+  version: 0.1.0
+dependencies:
+  - shared
+phases:
+  build:
+    commands:
+      - python3 app/main.py
+""")
+        _git_commit(workdir, "add takumi")
+
+    def verify(wd, metrics):
+        return _implement_feature_verify(wd, "Python")
+
+    return {"task": _IMPLEMENT_TASK, "verify": verify}
+
+
+def setup_implement_feature_ts(workdir, with_takumi):
+    """2-package TS workspace: no RLE utility exists."""
+    os.makedirs(f"{workdir}/shared")
+    Path(f"{workdir}/shared/index.ts").write_text(
+        'export function greet(name: string): string { return `Hello, ${name}`; }\n'
+    )
+    Path(f"{workdir}/shared/tsconfig.json").write_text(
+        '{"compilerOptions":{"outDir":"dist","rootDir":".","strict":true},'
+        '"include":["*.ts"]}\n'
+    )
+
+    os.makedirs(f"{workdir}/app")
+    Path(f"{workdir}/app/index.ts").write_text("""\
+console.log("app starting");
+""")
+    Path(f"{workdir}/app/tsconfig.json").write_text(
+        '{"compilerOptions":{"outDir":"dist","rootDir":".","strict":true},'
+        '"include":["*.ts"]}\n'
+    )
+
+    Path(f"{workdir}/tsconfig.json").write_text(
+        '{"files":[],"references":[{"path":"shared"},{"path":"app"}]}\n'
+    )
+
+    _git_init(workdir)
+
+    if with_takumi:
+        _takumi_init(workdir)
+        os.remove(f"{workdir}/takumi-pkg.yaml")
+        Path(f"{workdir}/takumi.yaml").write_text(
+            "workspace:\n  name: myapp\n  ignore:\n    - dist/\n    - node_modules/\n"
+        )
+        Path(f"{workdir}/shared/takumi-pkg.yaml").write_text("""\
+package:
+  name: shared
+  version: 0.1.0
+phases:
+  build:
+    commands:
+      - npx tsc -p tsconfig.json
+""")
+        Path(f"{workdir}/app/takumi-pkg.yaml").write_text("""\
+package:
+  name: app
+  version: 0.1.0
+dependencies:
+  - shared
+phases:
+  build:
+    commands:
+      - npx tsc -p tsconfig.json
+""")
+        _git_commit(workdir, "add takumi")
+
+    def verify(wd, metrics):
+        return _implement_feature_verify(wd, "TypeScript")
+
+    return {"task": _IMPLEMENT_TASK, "verify": verify}
+
+
+def setup_implement_feature_rust(workdir, with_takumi):
+    """2-package Rust workspace: no RLE utility exists."""
+    Path(f"{workdir}/Cargo.toml").write_text(
+        '[workspace]\nmembers = ["shared", "app"]\nresolver = "2"\n'
+    )
+
+    os.makedirs(f"{workdir}/shared/src")
+    Path(f"{workdir}/shared/Cargo.toml").write_text(
+        '[package]\nname = "shared"\nversion = "0.1.0"\nedition = "2021"\n'
+    )
+    Path(f"{workdir}/shared/src/lib.rs").write_text(
+        'pub fn greet(name: &str) -> String { format!("Hello, {}", name) }\n'
+    )
+
+    os.makedirs(f"{workdir}/app/src")
+    Path(f"{workdir}/app/Cargo.toml").write_text(
+        '[package]\nname = "app"\nversion = "0.1.0"\nedition = "2021"\n\n'
+        '[dependencies]\nshared = { path = "../shared" }\n'
+    )
+    Path(f"{workdir}/app/src/main.rs").write_text("""\
+fn main() {
+    println!("app starting");
+}
+""")
+
+    _git_init(workdir)
+
+    if with_takumi:
+        _takumi_init(workdir)
+        os.remove(f"{workdir}/takumi-pkg.yaml")
+        Path(f"{workdir}/takumi.yaml").write_text(
+            "workspace:\n  name: myapp\n  ignore:\n    - target/\n"
+        )
+        Path(f"{workdir}/shared/takumi-pkg.yaml").write_text("""\
+package:
+  name: shared
+  version: 0.1.0
+phases:
+  build:
+    commands:
+      - cargo build -p shared
+""")
+        Path(f"{workdir}/app/takumi-pkg.yaml").write_text("""\
+package:
+  name: app
+  version: 0.1.0
+dependencies:
+  - shared
+phases:
+  build:
+    commands:
+      - cargo build -p app
+""")
+        os.makedirs(f"{workdir}/target", exist_ok=True)
+        _git_commit(workdir, "add takumi")
+
+    def verify(wd, metrics):
+        return _implement_feature_verify(wd, "Rust")
+
+    return {"task": _IMPLEMENT_TASK, "verify": verify}
+
+
+def setup_implement_feature_java(workdir, with_takumi):
+    """2-package Java workspace: no RLE utility exists."""
+    os.makedirs(f"{workdir}/shared/src")
+    Path(f"{workdir}/shared/src/Lib.java").write_text("""\
+public class Lib {
+    public static String greet(String name) {
+        return "Hello, " + name;
+    }
+}
+""")
+
+    os.makedirs(f"{workdir}/app/src")
+    Path(f"{workdir}/app/src/Main.java").write_text("""\
+public class Main {
+    public static void main(String[] args) {
+        System.out.println("app starting");
+        System.out.println(Lib.greet("World"));
+    }
+}
+""")
+
+    _git_init(workdir)
+
+    if with_takumi:
+        _takumi_init(workdir)
+        os.remove(f"{workdir}/takumi-pkg.yaml")
+        Path(f"{workdir}/takumi.yaml").write_text(
+            "workspace:\n  name: myapp\n"
+        )
+        Path(f"{workdir}/shared/takumi-pkg.yaml").write_text("""\
+package:
+  name: shared
+  version: 0.1.0
+phases:
+  build:
+    commands:
+      - javac src/Lib.java
+""")
+        Path(f"{workdir}/app/takumi-pkg.yaml").write_text("""\
+package:
+  name: app
+  version: 0.1.0
+dependencies:
+  - shared
+phases:
+  build:
+    commands:
+      - javac -cp ../shared/src src/Main.java
+""")
+        _git_commit(workdir, "add takumi")
+
+    def verify(wd, metrics):
+        return _implement_feature_verify(wd, "Java")
+
+    return {"task": _IMPLEMENT_TASK, "verify": verify}
+
+
+# ---------------------------------------------------------------------------
 # Scenario registry
 # ---------------------------------------------------------------------------
 
@@ -2084,6 +3048,78 @@ SCENARIOS = {
         "desc": "Explain dependency graph and build order of a Java project",
         "setup": setup_understand_structure_java,
         "group": "understand-structure",
+        "lang": "Java",
+    },
+    # Find Utility
+    "find-utility-go": {
+        "name": "Find Utility (Go)",
+        "desc": "Discover existing format_duration utility and wire it into the app",
+        "setup": setup_find_utility_go,
+        "group": "find-utility",
+        "lang": "Go",
+    },
+    "find-utility-python": {
+        "name": "Find Utility (Python)",
+        "desc": "Discover existing format_duration utility and wire it into the app",
+        "setup": setup_find_utility_python,
+        "group": "find-utility",
+        "lang": "Python",
+    },
+    "find-utility-ts": {
+        "name": "Find Utility (TypeScript)",
+        "desc": "Discover existing formatDuration utility and wire it into the app",
+        "setup": setup_find_utility_ts,
+        "group": "find-utility",
+        "lang": "TypeScript",
+    },
+    "find-utility-rust": {
+        "name": "Find Utility (Rust)",
+        "desc": "Discover existing format_duration utility and wire it into the app",
+        "setup": setup_find_utility_rust,
+        "group": "find-utility",
+        "lang": "Rust",
+    },
+    "find-utility-java": {
+        "name": "Find Utility (Java)",
+        "desc": "Discover existing formatDuration utility and wire it into the app",
+        "setup": setup_find_utility_java,
+        "group": "find-utility",
+        "lang": "Java",
+    },
+    # Implement Feature
+    "implement-feature-go": {
+        "name": "Implement Feature (Go)",
+        "desc": "Search for RLE utility (none exists), then implement and use it",
+        "setup": setup_implement_feature_go,
+        "group": "implement-feature",
+        "lang": "Go",
+    },
+    "implement-feature-python": {
+        "name": "Implement Feature (Python)",
+        "desc": "Search for RLE utility (none exists), then implement and use it",
+        "setup": setup_implement_feature_python,
+        "group": "implement-feature",
+        "lang": "Python",
+    },
+    "implement-feature-ts": {
+        "name": "Implement Feature (TypeScript)",
+        "desc": "Search for RLE utility (none exists), then implement and use it",
+        "setup": setup_implement_feature_ts,
+        "group": "implement-feature",
+        "lang": "TypeScript",
+    },
+    "implement-feature-rust": {
+        "name": "Implement Feature (Rust)",
+        "desc": "Search for RLE utility (none exists), then implement and use it",
+        "setup": setup_implement_feature_rust,
+        "group": "implement-feature",
+        "lang": "Rust",
+    },
+    "implement-feature-java": {
+        "name": "Implement Feature (Java)",
+        "desc": "Search for RLE utility (none exists), then implement and use it",
+        "setup": setup_implement_feature_java,
+        "group": "implement-feature",
         "lang": "Java",
     },
 }

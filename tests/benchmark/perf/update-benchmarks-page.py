@@ -31,12 +31,24 @@ SCENARIOS = {
     "understand-structure-ts": {"title": "Understand Structure (TypeScript)", "desc": "Explain dependency graph and build order of a TS monorepo", "group": "understand-structure", "lang": "TypeScript"},
     "understand-structure-rust": {"title": "Understand Structure (Rust)", "desc": "Explain dependency graph and build order of a Rust workspace", "group": "understand-structure", "lang": "Rust"},
     "understand-structure-java": {"title": "Understand Structure (Java)", "desc": "Explain dependency graph and build order of a Java project", "group": "understand-structure", "lang": "Java"},
+    "find-utility-go": {"title": "Find Utility (Go)", "desc": "Discover existing format_duration utility and wire it into the app", "group": "find-utility", "lang": "Go"},
+    "find-utility-python": {"title": "Find Utility (Python)", "desc": "Discover existing format_duration utility and wire it into the app", "group": "find-utility", "lang": "Python"},
+    "find-utility-ts": {"title": "Find Utility (TypeScript)", "desc": "Discover existing formatDuration utility and wire it into the app", "group": "find-utility", "lang": "TypeScript"},
+    "find-utility-rust": {"title": "Find Utility (Rust)", "desc": "Discover existing format_duration utility and wire it into the app", "group": "find-utility", "lang": "Rust"},
+    "find-utility-java": {"title": "Find Utility (Java)", "desc": "Discover existing formatDuration utility and wire it into the app", "group": "find-utility", "lang": "Java"},
+    "implement-feature-go": {"title": "Implement Feature (Go)", "desc": "Search for RLE utility (none exists), then implement and use it", "group": "implement-feature", "lang": "Go"},
+    "implement-feature-python": {"title": "Implement Feature (Python)", "desc": "Search for RLE utility (none exists), then implement and use it", "group": "implement-feature", "lang": "Python"},
+    "implement-feature-ts": {"title": "Implement Feature (TypeScript)", "desc": "Search for RLE utility (none exists), then implement and use it", "group": "implement-feature", "lang": "TypeScript"},
+    "implement-feature-rust": {"title": "Implement Feature (Rust)", "desc": "Search for RLE utility (none exists), then implement and use it", "group": "implement-feature", "lang": "Rust"},
+    "implement-feature-java": {"title": "Implement Feature (Java)", "desc": "Search for RLE utility (none exists), then implement and use it", "group": "implement-feature", "lang": "Java"},
 }
 
 SCENARIO_GROUPS = {
     "fix-build-error": {"title": "Fix Build Error", "desc": "Find and fix a type error"},
     "scoped-rebuild": {"title": "Scoped Rebuild", "desc": "After changing shared lib, build only affected packages"},
     "understand-structure": {"title": "Understand Structure", "desc": "Explain dependency graph and build order of a monorepo"},
+    "find-utility": {"title": "Find Utility", "desc": "Discover an existing utility in the workspace and wire it into the app"},
+    "implement-feature": {"title": "Implement Feature", "desc": "Search for utility (none exists), implement from scratch"},
 }
 
 MODEL_NAMES = {
