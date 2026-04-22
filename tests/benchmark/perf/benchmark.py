@@ -198,22 +198,29 @@ You are working in a Takumi workspace — an AI-aware, language-agnostic package
 - takumi test      — test packages in dependency order (not pytest, go test, etc.)
 - takumi PHASE     — any phase is a top-level command (deploy, lint, dev, etc.)
 - takumi affected  — list packages affected by changes (scope before building)
-- takumi graph     — dependency DAG with topological levels
+- takumi graph     — full dependency DAG (authoritative — no need to also read configs or source imports)
 - takumi validate  — check configs for errors and cycles
 - takumi env setup — install deps & set up isolated runtime environments
-- takumi review     — AI-powered code review of workspace changes
 
 ## Workflow
 1. takumi status — understand the workspace
-2. takumi affected — scope what changed
-3. takumi build --affected — build only what changed
-4. takumi test --affected — test only what changed
-5. On failure: read .takumi/logs/ — fix — repeat from 3
+2. takumi build (or takumi build --affected) — build first, let errors guide you
+3. On failure: error output + .takumi/logs/<pkg>.<phase>.log tell you exactly where to look
+4. Fix the code, then rebuild
 
-## When NOT to use raw commands
-- See go.mod / package.json? Use takumi build, not language tools directly
-- Build failed? Read .takumi/logs/<pkg>.<phase>.log for details
-- Need project structure? Use takumi graph, not grep for imports"""
+For change-scoped work:
+1. takumi affected — what packages changed
+2. takumi build --affected — build only those
+3. takumi test --affected — test only those
+
+## Key principles
+- **Build first, explore later.** Run takumi build before reading source files. Errors pinpoint the problem — you don't need to explore the whole project.
+- **Trust takumi output.** takumi status, graph, and affected give you complete, accurate information. Don't redundantly read config files or source imports to verify them.
+- **Use takumi commands, not raw builds.** go build, npm run build, javac, cargo build — replace all of these with takumi build.
+
+## Config files (for reference — you rarely need to read these)
+- `takumi.yaml` — workspace root config (one per workspace)
+- `takumi-pkg.yaml` — package config (one per package directory, NOT `takumi.yaml`)"""
 
 # ---------------------------------------------------------------------------
 # Scenario setup functions
@@ -630,7 +637,7 @@ phases:
 
         # 1. api/main.py runs without error (0.4)
         r = subprocess.run(
-            "python api/main.py", shell=True, cwd=wd,
+            "python3 api/main.py", shell=True, cwd=wd,
             capture_output=True, text=True,
         )
         checks["runs_ok"] = r.returncode == 0
@@ -658,7 +665,7 @@ phases:
 
         # 4. shared still works (0.2)
         r2 = subprocess.run(
-            'python -c "from shared.lib import greet; assert greet(\'X\') == \'Hello, X\'"',
+            'python3 -c "from shared.lib import greet; assert greet(\'X\') == \'Hello, X\'"',
             shell=True, cwd=wd, capture_output=True, text=True,
         )
         checks["no_collateral"] = r2.returncode == 0
@@ -753,7 +760,7 @@ def setup_scoped_rebuild_python(workdir, with_takumi):
         all_ok = True
         for pkg in ("api", "web"):
             r = subprocess.run(
-                f"python {pkg}/main.py", shell=True, cwd=wd,
+                f"python3 {pkg}/main.py", shell=True, cwd=wd,
                 capture_output=True, text=True,
             )
             if r.returncode != 0:
@@ -2151,7 +2158,8 @@ def run_agent(task, workdir, with_takumi, model):
             })
 
         messages.append({"role": "assistant", "content": resp.content})
-        messages.append({"role": "user", "content": tool_results})
+        if tool_results:
+            messages.append({"role": "user", "content": tool_results})
 
         if done:
             metrics.task_completed = True
