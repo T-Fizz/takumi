@@ -5,6 +5,8 @@ with and without Takumi operator instructions across identical tasks.
 
 **Model:** `claude-sonnet-4-6` (configurable via `BENCH_MODEL`) | **Max turns:** 25
 
+See also: [`takumi benchmark`](../user/commands/takumi_benchmark.md) | [`takumi benchmark iterate`](../user/commands/takumi_benchmark_iterate.md)
+
 ---
 
 <!-- BENCHMARK_INSERT -->
