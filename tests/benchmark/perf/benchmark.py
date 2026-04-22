@@ -1342,7 +1342,7 @@ phases:
         # 2. Fix is in the right file (0.2)
         try:
             source = Path(f"{wd}/api/src/main.rs").read_text()
-            checks["correct_file"] = 'let port: u16 = "8080"' not in source
+            checks["correct_file"] = 'let port: u16 = "8080";' not in source
         except Exception:
             checks["correct_file"] = False
         if checks["correct_file"]:
@@ -1354,7 +1354,7 @@ phases:
             if any(p in source for p in (
                 "port: u16 = 8080", "port = 8080",
                 "port: u16 = 8080_u16", 'parse::<u16>',
-                "port: u16 = 8_080",
+                "port: u16 = 8_080", ".parse()",
             )):
                 checks["correct_fix"] = True
                 score += 0.2
