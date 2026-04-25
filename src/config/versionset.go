@@ -3,8 +3,6 @@ package config
 import (
 	"fmt"
 	"os"
-
-	"gopkg.in/yaml.v3"
 )
 
 // VersionSetConfig represents the takumi-versions.yaml file.
@@ -27,7 +25,7 @@ func LoadVersionSetConfig(path string) (*VersionSetConfig, error) {
 	}
 
 	var cfg VersionSetConfig
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	if err := decodeStrict(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parsing version-set config: %w", err)
 	}
 
