@@ -54,7 +54,7 @@ func LoadWorkspaceConfig(path string) (*WorkspaceConfig, error) {
 	}
 
 	var cfg WorkspaceConfig
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	if err := decodeStrict(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parsing workspace config: %w", err)
 	}
 
