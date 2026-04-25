@@ -90,6 +90,140 @@ Source: [`tests/benchmark/perf/`](https://github.com/T-Fizz/takumi/tree/main/tes
 
 <!-- BENCHMARK_INSERT -->
 
+## v1.0.3
+
+> 2026-04-25 | models: Haiku 4.5, Sonnet 4.6, Opus 4.6
+
+### Token Savings by Model
+
+| Model | Without Takumi | With Takumi | Saved | Turns | Tool Calls | Correctness |
+|-------|---------------|-------------|-------|-------|------------|-------------|
+| **Haiku 4.5*** | 0 | 0 | **—** | 0 / 0 | 0 / 0 | 0% / 0% |
+| **Sonnet 4.6*** | 0 | 0 | **—** | 0 / 0 | 0 / 0 | 0% / 0% |
+| **Opus 4.6*** | 0 | 0 | **—** | 0 / 0 | 0 / 0 | 0% / 0% |
+
+*Haiku 4.5 ran 0/25 scenarios; Sonnet 4.6 ran 0/25 scenarios; Opus 4.6 ran 0/25 scenarios (cost control)*
+
+### Scenarios
+
+#### Fix Build Error
+
+> Find and fix a type error
+
+| Language | Haiku 4.5 ||| Sonnet 4.6 ||| Opus 4.6 |||
+|----------|------|------|------|------|------|------|------|------|------|
+| | Without | With | Saved | Without | With | Saved | Without | With | Saved |
+| **Go** | — | — | — | — | — | — | — | — | — |
+| **Python** | — | — | — | — | — | — | — | — | — |
+| **TypeScript** | — | — | — | — | — | — | — | — | — |
+| **Rust** | — | — | — | — | — | — | — | — | — |
+| **Java** | — | — | — | — | — | — | — | — | — |
+
+**Correctness** (without / with):
+
+| Language | Haiku 4.5 | Sonnet 4.6 | Opus 4.6 |
+|----------|------|------|------|
+| Go | — | — | — |
+| Python | — | — | — |
+| TypeScript | — | — | — |
+| Rust | — | — | — |
+| Java | — | — | — |
+
+#### Scoped Rebuild
+
+> After changing shared lib, build only affected packages
+
+| Language | Haiku 4.5 ||| Sonnet 4.6 ||| Opus 4.6 |||
+|----------|------|------|------|------|------|------|------|------|------|
+| | Without | With | Saved | Without | With | Saved | Without | With | Saved |
+| **Go** | — | — | — | — | — | — | — | — | — |
+| **Python** | — | — | — | — | — | — | — | — | — |
+| **TypeScript** | — | — | — | — | — | — | — | — | — |
+| **Rust** | — | — | — | — | — | — | — | — | — |
+| **Java** | — | — | — | — | — | — | — | — | — |
+
+**Correctness** (without / with):
+
+| Language | Haiku 4.5 | Sonnet 4.6 | Opus 4.6 |
+|----------|------|------|------|
+| Go | — | — | — |
+| Python | — | — | — |
+| TypeScript | — | — | — |
+| Rust | — | — | — |
+| Java | — | — | — |
+
+#### Understand Structure
+
+> Explain dependency graph and build order of a monorepo
+
+| Language | Haiku 4.5 ||| Sonnet 4.6 ||| Opus 4.6 |||
+|----------|------|------|------|------|------|------|------|------|------|
+| | Without | With | Saved | Without | With | Saved | Without | With | Saved |
+| **Go** | — | — | — | — | — | — | — | — | — |
+| **Python** | — | — | — | — | — | — | — | — | — |
+| **TypeScript** | — | — | — | — | — | — | — | — | — |
+| **Rust** | — | — | — | — | — | — | — | — | — |
+| **Java** | — | — | — | — | — | — | — | — | — |
+
+**Correctness** (without / with):
+
+| Language | Haiku 4.5 | Sonnet 4.6 | Opus 4.6 |
+|----------|------|------|------|
+| Go | — | — | — |
+| Python | — | — | — |
+| TypeScript | — | — | — |
+| Rust | — | — | — |
+| Java | — | — | — |
+
+#### Find Utility
+
+> Discover an existing utility in the workspace and wire it into the app
+
+| Language | Haiku 4.5 ||| Sonnet 4.6 ||| Opus 4.6 |||
+|----------|------|------|------|------|------|------|------|------|------|
+| | Without | With | Saved | Without | With | Saved | Without | With | Saved |
+| **Go** | — | — | — | — | — | — | — | — | — |
+| **Python** | — | — | — | — | — | — | — | — | — |
+| **TypeScript** | — | — | — | — | — | — | — | — | — |
+| **Rust** | — | — | — | — | — | — | — | — | — |
+| **Java** | — | — | — | — | — | — | — | — | — |
+
+**Correctness** (without / with):
+
+| Language | Haiku 4.5 | Sonnet 4.6 | Opus 4.6 |
+|----------|------|------|------|
+| Go | — | — | — |
+| Python | — | — | — |
+| TypeScript | — | — | — |
+| Rust | — | — | — |
+| Java | — | — | — |
+
+#### Implement Feature
+
+> Search for utility (none exists), implement from scratch
+
+| Language | Haiku 4.5 ||| Sonnet 4.6 ||| Opus 4.6 |||
+|----------|------|------|------|------|------|------|------|------|------|
+| | Without | With | Saved | Without | With | Saved | Without | With | Saved |
+| **Go** | — | — | — | — | — | — | — | — | — |
+| **Python** | — | — | — | — | — | — | — | — | — |
+| **TypeScript** | — | — | — | — | — | — | — | — | — |
+| **Rust** | — | — | — | — | — | — | — | — | — |
+| **Java** | — | — | — | — | — | — | — | — | — |
+
+**Correctness** (without / with):
+
+| Language | Haiku 4.5 | Sonnet 4.6 | Opus 4.6 |
+|----------|------|------|------|
+| Go | — | — | — |
+| Python | — | — | — |
+| TypeScript | — | — | — |
+| Rust | — | — | — |
+| Java | — | — | — |
+
+---
+
+
 ## v1.0.2
 
 > 2026-04-22 | models: Haiku 4.5, Sonnet 4.6, Opus 4.6
