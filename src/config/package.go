@@ -56,7 +56,7 @@ func LoadPackageConfig(path string) (*PackageConfig, error) {
 	}
 
 	var cfg PackageConfig
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	if err := decodeStrict(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parsing package config: %w", err)
 	}
 
