@@ -960,6 +960,31 @@ func TestRecordMetrics_WriteError(t *testing.T) {
 	assert.Error(t, err, "should fail when metrics file cannot be written")
 }
 
+// TestRun_LogFileCreationFails_RecordsError verifies that when the log path
+// cannot be created (e.g., logs/ exists as a regular file), the package result
+// surfaces a "creating log file" error and skips command execution entirely.
+func TestRun_LogFileCreationFails_RecordsError(t *testing.T) {
+	stampDir := t.TempDir()
+	pkgCfg := config.DefaultPackageConfig("blocked")
+	pkgCfg.Phases = map[string]*config.Phase{
+		"build": {Commands: []string{fmt.Sprintf("touch %s/should-not-exist.txt", stampDir)}},
+	}
+	ws := setupTestWorkspace(t, map[string]*config.PackageConfig{"blocked": pkgCfg})
+
+	// Plant a regular file where the logs directory should go.
+	logsPath := filepath.Join(ws.Root, ".takumi", "logs")
+	require.NoError(t, os.WriteFile(logsPath, []byte("not a dir"), 0644))
+
+	results, _ := Run(ws, RunOptions{Phase: "build"})
+	require.Len(t, results, 1)
+	require.Error(t, results[0].Error)
+	assert.Contains(t, results[0].Error.Error(), "creating log file")
+
+	// Critical: the command MUST NOT have run.
+	_, statErr := os.Stat(filepath.Join(stampDir, "should-not-exist.txt"))
+	assert.True(t, os.IsNotExist(statErr), "command must not run when log file cannot be created")
+}
+
 func TestRun_ParallelFailure(t *testing.T) {
 	pkgA := config.DefaultPackageConfig("a")
 	pkgA.Phases = map[string]*config.Phase{

@@ -184,6 +184,47 @@ func TestRunGraph_WithPackages(t *testing.T) {
 	assert.Contains(t, out, "2 packages")
 }
 
+// TestRunGraph_CycleDetected_ReturnsError verifies that a circular dependency
+// causes runGraph to return the cycle error (not silently print partial output).
+func TestRunGraph_CycleDetected_ReturnsError(t *testing.T) {
+	dir := realPath(t, t.TempDir())
+	setupWorkspace(t, dir)
+
+	// Create A↔B circular dependency.
+	for _, p := range []struct{ name, dep string }{{"a", "b"}, {"b", "a"}} {
+		pkgDir := filepath.Join(dir, p.name)
+		require.NoError(t, os.MkdirAll(pkgDir, 0755))
+		cfg := "package:\n  name: " + p.name + "\n  version: 0.1.0\ndependencies:\n  - " + p.dep + "\nphases:\n  build:\n    commands: [echo " + p.name + "]\n"
+		require.NoError(t, os.WriteFile(filepath.Join(pkgDir, "takumi-pkg.yaml"), []byte(cfg), 0644))
+	}
+	chdirClean(t, dir)
+
+	err := runGraph(graphCmd, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cycle detected")
+}
+
+// TestRunGraph_PhasesFlag_PrintsCommands verifies --phases adds each phase's
+// commands to the output, indented under the package name.
+func TestRunGraph_PhasesFlag_PrintsCommands(t *testing.T) {
+	dir := realPath(t, t.TempDir())
+	setupWorkspaceWithPackages(t, dir)
+	chdirClean(t, dir)
+
+	prevPhases := graphPhases
+	graphPhases = true
+	t.Cleanup(func() { graphPhases = prevPhases })
+
+	out := captureStdout(t, func() {
+		err := runGraph(graphCmd, nil)
+		assert.NoError(t, err)
+	})
+	// The package fixtures use these exact commands (see setupWorkspaceWithPackages).
+	assert.Contains(t, out, "build: echo building-a")
+	assert.Contains(t, out, "test: echo testing-a")
+	assert.Contains(t, out, "build: echo building-b")
+}
+
 // ---------------------------------------------------------------------------
 // runStatus
 // ---------------------------------------------------------------------------

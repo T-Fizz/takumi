@@ -79,6 +79,9 @@ func TestRunSync_ClonesMissingRepo(t *testing.T) {
 	assert.DirExists(t, filepath.Join(wsDir, "test-repo"))
 }
 
+// TestRunSync_HandlesBadURL pins the contract that sync surfaces failures in
+// the printed summary even though it returns nil (continues past failures).
+// The "1 failed" must appear so users don't think the sync silently succeeded.
 func TestRunSync_HandlesBadURL(t *testing.T) {
 	wsDir := realPath(t, t.TempDir())
 	setupWorkspaceWithSource(t, wsDir, "bad-repo", config.Source{
@@ -91,9 +94,8 @@ func TestRunSync_HandlesBadURL(t *testing.T) {
 	exitCode := withFakeExit(t)
 	out := captureStdout(t, func() {
 		err := runSync(syncCmd, nil)
-		// sync continues past failures, returns nil
-		assert.NoError(t, err)
+		assert.NoError(t, err, "sync continues past failures and returns nil by design")
 	})
-	_ = out
-	assert.Equal(t, -1, *exitCode)
+	assert.Equal(t, -1, *exitCode, "sync must not call os.Exit on per-source failure")
+	assert.Contains(t, out, "1 failed", "summary must report the failure count so users don't assume silent success")
 }
