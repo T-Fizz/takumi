@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestValidateWorkspace_Valid(t *testing.T) {
@@ -18,6 +19,28 @@ func TestValidateWorkspace_EmptyName(t *testing.T) {
 	assert.Len(t, findings, 1)
 	assert.Equal(t, SeverityError, findings[0].Severity)
 	assert.Equal(t, "workspace.name", findings[0].Field)
+}
+
+// TestValidateWorkspace_WhitespaceNameRejectsAsEmpty pins down that a name
+// consisting only of whitespace is treated as an empty name (not silently accepted).
+func TestValidateWorkspace_WhitespaceNameRejectsAsEmpty(t *testing.T) {
+	cfg := DefaultWorkspaceConfig("   \t  ")
+	findings := ValidateWorkspace(cfg)
+	require.Len(t, findings, 1)
+	assert.Equal(t, SeverityError, findings[0].Severity)
+	assert.Equal(t, "workspace.name", findings[0].Field)
+	assert.Equal(t, "must not be empty", findings[0].Message)
+}
+
+// TestValidateWorkspace_WhitespaceSourceURLRejectsAsEmpty pins down that a
+// source URL of only whitespace is treated as missing.
+func TestValidateWorkspace_WhitespaceSourceURLRejectsAsEmpty(t *testing.T) {
+	cfg := DefaultWorkspaceConfig("test")
+	cfg.Workspace.Sources["repo"] = Source{URL: "  \t ", Path: "/some/path"}
+	findings := ValidateWorkspace(cfg)
+	require.Len(t, findings, 1)
+	assert.Equal(t, SeverityError, findings[0].Severity)
+	assert.Equal(t, "workspace.sources.repo.url", findings[0].Field)
 }
 
 func TestValidateWorkspace_InvalidAgent(t *testing.T) {
