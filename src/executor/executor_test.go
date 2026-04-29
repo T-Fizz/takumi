@@ -267,6 +267,57 @@ func TestRun_PreAndPostCommands(t *testing.T) {
 	assert.Greater(t, postIdx, cmdIdx, "post should run after cmd")
 }
 
+// TestRun_PreFails_SkipsCommandsAndPost asserts that when a Pre command fails,
+// the Commands and Post stages are not executed at all.
+func TestRun_PreFails_SkipsCommandsAndPost(t *testing.T) {
+	stampDir := t.TempDir()
+	ws := setupTestWorkspace(t, map[string]*config.PackageConfig{
+		"prefails": {
+			Package: config.PackageMeta{Name: "prefails", Version: "1.0.0"},
+			Phases: map[string]*config.Phase{
+				"build": {
+					Pre:      []string{"exit 7"},
+					Commands: []string{fmt.Sprintf("touch %s/cmd.txt", stampDir)},
+					Post:     []string{fmt.Sprintf("touch %s/post.txt", stampDir)},
+				},
+			},
+		},
+	})
+
+	results, _ := Run(ws, RunOptions{Phase: "build"})
+	require.Len(t, results, 1)
+	assert.Equal(t, 7, results[0].ExitCode, "exit code must come from the failing Pre command")
+
+	_, cmdErr := os.Stat(filepath.Join(stampDir, "cmd.txt"))
+	assert.True(t, os.IsNotExist(cmdErr), "Commands stage must not run when Pre fails")
+	_, postErr := os.Stat(filepath.Join(stampDir, "post.txt"))
+	assert.True(t, os.IsNotExist(postErr), "Post stage must not run when Pre fails")
+}
+
+// TestRun_PostFails_ReturnsPostExitCode asserts that when Commands succeed but
+// Post fails, the result reflects the Post failure (not a silent success).
+func TestRun_PostFails_ReturnsPostExitCode(t *testing.T) {
+	stampDir := t.TempDir()
+	ws := setupTestWorkspace(t, map[string]*config.PackageConfig{
+		"postfails": {
+			Package: config.PackageMeta{Name: "postfails", Version: "1.0.0"},
+			Phases: map[string]*config.Phase{
+				"build": {
+					Commands: []string{fmt.Sprintf("touch %s/cmd.txt", stampDir)},
+					Post:     []string{"exit 9"},
+				},
+			},
+		},
+	})
+
+	results, _ := Run(ws, RunOptions{Phase: "build"})
+	require.Len(t, results, 1)
+	assert.Equal(t, 9, results[0].ExitCode, "exit code must come from the failing Post command")
+
+	_, cmdErr := os.Stat(filepath.Join(stampDir, "cmd.txt"))
+	assert.NoError(t, cmdErr, "Commands stage must have run before Post failed")
+}
+
 // ---------------------------------------------------------------------------
 // 8. TestRun_RuntimeEnvInjection
 // ---------------------------------------------------------------------------
@@ -907,6 +958,31 @@ func TestRecordMetrics_WriteError(t *testing.T) {
 		{Package: "p", Phase: "build", Duration: 100 * time.Millisecond},
 	})
 	assert.Error(t, err, "should fail when metrics file cannot be written")
+}
+
+// TestRun_LogFileCreationFails_RecordsError verifies that when the log path
+// cannot be created (e.g., logs/ exists as a regular file), the package result
+// surfaces a "creating log file" error and skips command execution entirely.
+func TestRun_LogFileCreationFails_RecordsError(t *testing.T) {
+	stampDir := t.TempDir()
+	pkgCfg := config.DefaultPackageConfig("blocked")
+	pkgCfg.Phases = map[string]*config.Phase{
+		"build": {Commands: []string{fmt.Sprintf("touch %s/should-not-exist.txt", stampDir)}},
+	}
+	ws := setupTestWorkspace(t, map[string]*config.PackageConfig{"blocked": pkgCfg})
+
+	// Plant a regular file where the logs directory should go.
+	logsPath := filepath.Join(ws.Root, ".takumi", "logs")
+	require.NoError(t, os.WriteFile(logsPath, []byte("not a dir"), 0644))
+
+	results, _ := Run(ws, RunOptions{Phase: "build"})
+	require.Len(t, results, 1)
+	require.Error(t, results[0].Error)
+	assert.Contains(t, results[0].Error.Error(), "creating log file")
+
+	// Critical: the command MUST NOT have run.
+	_, statErr := os.Stat(filepath.Join(stampDir, "should-not-exist.txt"))
+	assert.True(t, os.IsNotExist(statErr), "command must not run when log file cannot be created")
 }
 
 func TestRun_ParallelFailure(t *testing.T) {

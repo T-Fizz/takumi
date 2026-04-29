@@ -9,7 +9,12 @@ import (
 	"time"
 )
 
-func httpPostJSON(url string, headers map[string]string, body any) ([]byte, error) {
+// httpPostJSON is the package-level HTTP poster used by all providers.
+// Tests can replace this var to inject mock responses without spinning up
+// a real server (see http_test.go for the live-server tests).
+var httpPostJSON = realHTTPPostJSON
+
+func realHTTPPostJSON(url string, headers map[string]string, body any) ([]byte, error) {
 	data, err := json.Marshal(body)
 	if err != nil {
 		return nil, fmt.Errorf("marshaling request: %w", err)

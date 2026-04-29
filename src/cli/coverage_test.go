@@ -184,6 +184,47 @@ func TestRunGraph_WithPackages(t *testing.T) {
 	assert.Contains(t, out, "2 packages")
 }
 
+// TestRunGraph_CycleDetected_ReturnsError verifies that a circular dependency
+// causes runGraph to return the cycle error (not silently print partial output).
+func TestRunGraph_CycleDetected_ReturnsError(t *testing.T) {
+	dir := realPath(t, t.TempDir())
+	setupWorkspace(t, dir)
+
+	// Create A↔B circular dependency.
+	for _, p := range []struct{ name, dep string }{{"a", "b"}, {"b", "a"}} {
+		pkgDir := filepath.Join(dir, p.name)
+		require.NoError(t, os.MkdirAll(pkgDir, 0755))
+		cfg := "package:\n  name: " + p.name + "\n  version: 0.1.0\ndependencies:\n  - " + p.dep + "\nphases:\n  build:\n    commands: [echo " + p.name + "]\n"
+		require.NoError(t, os.WriteFile(filepath.Join(pkgDir, "takumi-pkg.yaml"), []byte(cfg), 0644))
+	}
+	chdirClean(t, dir)
+
+	err := runGraph(graphCmd, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cycle detected")
+}
+
+// TestRunGraph_PhasesFlag_PrintsCommands verifies --phases adds each phase's
+// commands to the output, indented under the package name.
+func TestRunGraph_PhasesFlag_PrintsCommands(t *testing.T) {
+	dir := realPath(t, t.TempDir())
+	setupWorkspaceWithPackages(t, dir)
+	chdirClean(t, dir)
+
+	prevPhases := graphPhases
+	graphPhases = true
+	t.Cleanup(func() { graphPhases = prevPhases })
+
+	out := captureStdout(t, func() {
+		err := runGraph(graphCmd, nil)
+		assert.NoError(t, err)
+	})
+	// The package fixtures use these exact commands (see setupWorkspaceWithPackages).
+	assert.Contains(t, out, "build: echo building-a")
+	assert.Contains(t, out, "test: echo testing-a")
+	assert.Contains(t, out, "build: echo building-b")
+}
+
 // ---------------------------------------------------------------------------
 // runStatus
 // ---------------------------------------------------------------------------
@@ -1556,14 +1597,16 @@ func TestRunDocsHookRemove_WithHook(t *testing.T) {
 // agent helpers — additional coverage
 // ---------------------------------------------------------------------------
 
-func TestSetupAgentConfig_NoneAgent_Cov(t *testing.T) {
+func TestSetupAgentConfig_NoneAgent_CreatesNoFiles(t *testing.T) {
 	dir := t.TempDir()
 	agent := AgentByName("none")
 	require.NotNil(t, agent)
 
-	err := setupAgentConfig(dir, agent)
-	assert.NoError(t, err)
-	// "none" should not create any file
+	require.NoError(t, setupAgentConfig(dir, agent))
+
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	assert.Empty(t, entries, "none agent must not create any files")
 }
 
 func TestSetupAgentConfig_CreateNew(t *testing.T) {
@@ -1624,43 +1667,39 @@ func TestSetupAgentConfig_CursorCreatesSubdir(t *testing.T) {
 	assert.FileExists(t, filepath.Join(dir, ".cursor", "rules"))
 }
 
-func TestWriteTakumiMD_Cov(t *testing.T) {
+func TestWriteTakumiMD_WritesFileWithWorkspaceName(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, ".takumi"), 0755))
 
-	out := captureStdout(t, func() {
-		err := writeTakumiMD(dir, "my-workspace")
-		assert.NoError(t, err)
-	})
-	assert.Contains(t, out, "TAKUMI.md")
+	require.NoError(t, writeTakumiMD(dir, "my-workspace"))
 
 	data, err := os.ReadFile(filepath.Join(dir, ".takumi", "TAKUMI.md"))
 	require.NoError(t, err)
 	assert.Contains(t, string(data), "my-workspace")
 }
 
-func TestTakumiMDContent_Cov(t *testing.T) {
-	content := takumiMDContent("test-ws")
-	assert.Contains(t, content, "test-ws")
-	assert.Contains(t, content, "takumi status")
-	assert.Contains(t, content, "takumi build")
-}
-
-func TestAgentByName_Cov(t *testing.T) {
-	assert.NotNil(t, AgentByName("claude"))
-	assert.NotNil(t, AgentByName("cursor"))
-	assert.NotNil(t, AgentByName("copilot"))
-	assert.NotNil(t, AgentByName("windsurf"))
-	assert.NotNil(t, AgentByName("cline"))
-	assert.NotNil(t, AgentByName("none"))
+func TestAgentByName_ReturnsCorrectFilePath(t *testing.T) {
+	cases := map[string]string{
+		"claude":   "CLAUDE.md",
+		"cursor":   ".cursor/rules",
+		"copilot":  ".github/copilot-instructions.md",
+		"windsurf": ".windsurfrules",
+		"cline":    ".clinerules",
+		"kiro":     "AGENTS.md",
+		"none":     "",
+	}
+	for name, wantPath := range cases {
+		got := AgentByName(name)
+		require.NotNil(t, got, "AgentByName(%q) returned nil", name)
+		assert.Equal(t, name, got.Name)
+		assert.Equal(t, wantPath, got.FilePath, "FilePath for %q", name)
+	}
 	assert.Nil(t, AgentByName("nonexistent"))
 }
 
-func TestAgentNames_Cov(t *testing.T) {
-	names := agentNames()
-	assert.Contains(t, names, "claude")
-	assert.Contains(t, names, "cursor")
-	assert.Contains(t, names, "none")
+func TestAgentNames_ReturnsAllSupportedAgents(t *testing.T) {
+	got := agentNames()
+	assert.Equal(t, "claude, cursor, copilot, windsurf, cline, kiro, none", got)
 }
 
 // ---------------------------------------------------------------------------

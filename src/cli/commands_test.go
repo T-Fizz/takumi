@@ -62,10 +62,15 @@ func TestTestCmd_Flags(t *testing.T) {
 	assert.Equal(t, "false", f.DefValue)
 }
 
-// TestCheckoutCmd_Flags verifies flags are registered.
+// TestCheckoutCmd_Flags verifies --branch and --path are registered with empty defaults.
 func TestCheckoutCmd_Flags(t *testing.T) {
-	assert.NotNil(t, checkoutCmd.Flags().Lookup("branch"))
-	assert.NotNil(t, checkoutCmd.Flags().Lookup("path"))
+	branch := checkoutCmd.Flags().Lookup("branch")
+	require.NotNil(t, branch)
+	assert.Equal(t, "", branch.DefValue)
+
+	path := checkoutCmd.Flags().Lookup("path")
+	require.NotNil(t, path)
+	assert.Equal(t, "", path.DefValue)
 }
 
 // TestRemoveCmd_Flags verifies the --delete flag is registered.
@@ -75,10 +80,13 @@ func TestRemoveCmd_Flags(t *testing.T) {
 	assert.Equal(t, "false", f.DefValue)
 }
 
-// TestAffectedCmd_Flags verifies the --since flag is registered.
+// TestAffectedCmd_Flags verifies the --since flag is registered with no default
+// (empty default falls back to git's working-tree comparison).
 func TestAffectedCmd_Flags(t *testing.T) {
 	f := affectedCmd.Flags().Lookup("since")
 	require.NotNil(t, f)
+	assert.Equal(t, "", f.DefValue)
+	assert.Equal(t, "string", f.Value.Type())
 }
 
 // TestVersionSetCmd_Alias verifies the "vs" alias is registered.
