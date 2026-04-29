@@ -118,6 +118,16 @@ func makeRequest(args map[string]any) gomcp.CallToolRequest {
 // loadWorkspace tests
 // ---------------------------------------------------------------------------
 
+
+// chdirT changes cwd to dir and restores the original cwd at test end.
+func chdirT(t *testing.T, dir string) {
+	t.Helper()
+	origDir, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(dir))
+	t.Cleanup(func() { os.Chdir(origDir) })
+}
+
 func TestLoadWorkspace_Success(t *testing.T) {
 	setupWorkspace(t)
 	ws, err := loadWorkspace()
@@ -128,9 +138,7 @@ func TestLoadWorkspace_Success(t *testing.T) {
 
 func TestLoadWorkspace_NoWorkspace(t *testing.T) {
 	dir := t.TempDir()
-	origDir, _ := os.Getwd()
-	os.Chdir(dir)
-	defer os.Chdir(origDir)
+	chdirT(t, dir)
 
 	ws, err := loadWorkspace()
 	assert.Error(t, err)
@@ -164,8 +172,9 @@ func TestHandleStatus_WithMetrics(t *testing.T) {
 			{Package: "my-pkg", Phase: "build", ExitCode: 0, DurationMs: 150},
 		},
 	}
-	data, _ := json.Marshal(metrics)
-	os.WriteFile(filepath.Join(dir, ".takumi", "metrics.json"), data, 0644)
+	data, err := json.Marshal(metrics)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".takumi", "metrics.json"), data, 0644))
 
 	result, err := handleStatus(context.Background(), makeRequest(nil))
 	require.NoError(t, err)
@@ -177,9 +186,7 @@ func TestHandleStatus_WithMetrics(t *testing.T) {
 
 func TestHandleStatus_NoWorkspace(t *testing.T) {
 	dir := t.TempDir()
-	origDir, _ := os.Getwd()
-	os.Chdir(dir)
-	defer os.Chdir(origDir)
+	chdirT(t, dir)
 
 	result, err := handleStatus(context.Background(), makeRequest(nil))
 	require.NoError(t, err)
@@ -229,9 +236,7 @@ func TestHandleTest_SpecificPackage(t *testing.T) {
 
 func TestHandleTest_NoWorkspace(t *testing.T) {
 	dir := t.TempDir()
-	origDir, _ := os.Getwd()
-	os.Chdir(dir)
-	defer os.Chdir(origDir)
+	chdirT(t, dir)
 
 	result, err := handleTest(context.Background(), makeRequest(nil))
 	require.NoError(t, err)
@@ -256,9 +261,7 @@ phases:
       - exit 1
 `), 0644))
 
-	origDir, _ := os.Getwd()
-	os.Chdir(dir)
-	defer os.Chdir(origDir)
+	chdirT(t, dir)
 
 	result, err := handleTest(context.Background(), makeRequest(nil))
 	require.NoError(t, err)
@@ -370,9 +373,7 @@ func TestHandleBuild_SpecificPackage(t *testing.T) {
 
 func TestHandleBuild_NoWorkspace(t *testing.T) {
 	dir := t.TempDir()
-	origDir, _ := os.Getwd()
-	os.Chdir(dir)
-	defer os.Chdir(origDir)
+	chdirT(t, dir)
 
 	result, err := handleBuild(context.Background(), makeRequest(nil))
 	require.NoError(t, err)
@@ -425,9 +426,7 @@ func TestHandleValidate_WithErrors(t *testing.T) {
   name: ""
 `), 0644))
 
-	origDir, _ := os.Getwd()
-	os.Chdir(dir)
-	defer os.Chdir(origDir)
+	chdirT(t, dir)
 
 	result, err := handleValidate(context.Background(), makeRequest(nil))
 	require.NoError(t, err)
@@ -468,9 +467,7 @@ func TestHandleGraph_WithDeps(t *testing.T) {
 
 func TestHandleGraph_NoWorkspace(t *testing.T) {
 	dir := t.TempDir()
-	origDir, _ := os.Getwd()
-	os.Chdir(dir)
-	defer os.Chdir(origDir)
+	chdirT(t, dir)
 
 	result, err := handleGraph(context.Background(), makeRequest(nil))
 	require.NoError(t, err)
@@ -483,9 +480,7 @@ func TestHandleGraph_NoWorkspace(t *testing.T) {
 
 func TestHandleAffected_NoWorkspace(t *testing.T) {
 	dir := t.TempDir()
-	origDir, _ := os.Getwd()
-	os.Chdir(dir)
-	defer os.Chdir(origDir)
+	chdirT(t, dir)
 
 	result, err := handleAffected(context.Background(), makeRequest(nil))
 	require.NoError(t, err)
@@ -582,9 +577,7 @@ func TestHandleStatus_WithSources(t *testing.T) {
 `
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "takumi.yaml"), []byte(wsYAML), 0644))
 
-	origDir, _ := os.Getwd()
-	os.Chdir(dir)
-	defer os.Chdir(origDir)
+	chdirT(t, dir)
 
 	result, err := handleStatus(context.Background(), makeRequest(nil))
 	require.NoError(t, err)
@@ -638,9 +631,7 @@ dependencies:
   - nonexistent
 `), 0644))
 
-	origDir, _ := os.Getwd()
-	os.Chdir(dir)
-	defer os.Chdir(origDir)
+	chdirT(t, dir)
 
 	result, err := handleValidate(context.Background(), makeRequest(nil))
 	require.NoError(t, err)
@@ -845,9 +836,7 @@ phases:
       - exit 1
 `), 0644))
 
-	origDir, _ := os.Getwd()
-	os.Chdir(dir)
-	defer os.Chdir(origDir)
+	chdirT(t, dir)
 
 	result, err := handleBuild(context.Background(), makeRequest(nil))
 	require.NoError(t, err)
@@ -891,9 +880,7 @@ func TestHandleValidate_VersionSet(t *testing.T) {
     react: "18.0.0"
 `), 0644))
 
-	origDir, _ := os.Getwd()
-	os.Chdir(dir)
-	defer os.Chdir(origDir)
+	chdirT(t, dir)
 
 	result, err := handleValidate(context.Background(), makeRequest(nil))
 	require.NoError(t, err)
@@ -917,9 +904,7 @@ func TestHandleValidate_InvalidVersionSet(t *testing.T) {
     a: "1.0.0"
 `), 0644))
 
-	origDir, _ := os.Getwd()
-	os.Chdir(dir)
-	defer os.Chdir(origDir)
+	chdirT(t, dir)
 
 	result, err := handleValidate(context.Background(), makeRequest(nil))
 	require.NoError(t, err)
@@ -938,9 +923,7 @@ func TestHandleValidate_CorruptVersionSet(t *testing.T) {
 `), 0644))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "versions.yaml"), []byte(`not: valid: yaml: [[[`), 0644))
 
-	origDir, _ := os.Getwd()
-	os.Chdir(dir)
-	defer os.Chdir(origDir)
+	chdirT(t, dir)
 
 	result, err := handleValidate(context.Background(), makeRequest(nil))
 	require.NoError(t, err)
@@ -963,9 +946,7 @@ func TestHandleValidate_WarningsOnly(t *testing.T) {
   version: ""
 `), 0644))
 
-	origDir, _ := os.Getwd()
-	os.Chdir(dir)
-	defer os.Chdir(origDir)
+	chdirT(t, dir)
 
 	result, err := handleValidate(context.Background(), makeRequest(nil))
 	require.NoError(t, err)
@@ -997,9 +978,7 @@ dependencies:
 `), 0644))
 	}
 
-	origDir, _ := os.Getwd()
-	os.Chdir(dir)
-	defer os.Chdir(origDir)
+	chdirT(t, dir)
 
 	result, err := handleValidate(context.Background(), makeRequest(nil))
 	require.NoError(t, err)
@@ -1087,9 +1066,7 @@ dependencies:
 `), 0644))
 	}
 
-	origDir, _ := os.Getwd()
-	os.Chdir(dir)
-	defer os.Chdir(origDir)
+	chdirT(t, dir)
 
 	result, err := handleGraph(context.Background(), makeRequest(nil))
 	require.NoError(t, err)
@@ -1109,9 +1086,7 @@ func TestHandleStatus_MinimalWorkspace(t *testing.T) {
   name: empty-ws
 `), 0644))
 
-	origDir, _ := os.Getwd()
-	os.Chdir(dir)
-	defer os.Chdir(origDir)
+	chdirT(t, dir)
 
 	result, err := handleStatus(context.Background(), makeRequest(nil))
 	require.NoError(t, err)
@@ -1133,9 +1108,7 @@ func TestLoadWorkspace_LoadError(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, ".takumi"), 0755))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "takumi.yaml"), []byte(`not: valid: [[[`), 0644))
 
-	origDir, _ := os.Getwd()
-	os.Chdir(dir)
-	defer os.Chdir(origDir)
+	chdirT(t, dir)
 
 	ws, err := loadWorkspace()
 	assert.Error(t, err)
@@ -1154,9 +1127,7 @@ func TestHandleValidate_ParseErrors(t *testing.T) {
 	require.NoError(t, os.MkdirAll(pkgDir, 0755))
 	require.NoError(t, os.WriteFile(filepath.Join(pkgDir, "takumi-pkg.yaml"), []byte(`this is: not: valid: [[[`), 0644))
 
-	origDir, _ := os.Getwd()
-	os.Chdir(dir)
-	defer os.Chdir(origDir)
+	chdirT(t, dir)
 
 	result, err := handleValidate(context.Background(), makeRequest(nil))
 	require.NoError(t, err)
@@ -1174,9 +1145,7 @@ func TestHandleValidate_VersionSetMissingFile(t *testing.T) {
     file: nonexistent.yaml
 `), 0644))
 
-	origDir, _ := os.Getwd()
-	os.Chdir(dir)
-	defer os.Chdir(origDir)
+	chdirT(t, dir)
 
 	// Should succeed — missing file is just skipped
 	result, err := handleValidate(context.Background(), makeRequest(nil))
@@ -1196,9 +1165,7 @@ func TestHandleStatus_SourceDefaultPath(t *testing.T) {
       url: "git@example.com:my-src.git"
 `), 0644))
 
-	origDir, _ := os.Getwd()
-	os.Chdir(dir)
-	defer os.Chdir(origDir)
+	chdirT(t, dir)
 
 	result, err := handleStatus(context.Background(), makeRequest(nil))
 	require.NoError(t, err)
